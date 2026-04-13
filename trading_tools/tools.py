@@ -6,22 +6,24 @@ AI agent tools for market analysis and trading decisions
 import json
 from typing import Dict, List
 
-from .api import WafaBourseAPI
+from .providers import CachingDataProvider, DataProvider, WafaBourseProvider
 from .technical_analysis import TechnicalAnalysis
 
 
 class TradingTools:
-    """Trading analysis tools for AI agent"""
-    
-    def __init__(self, wafa_api: WafaBourseAPI = None, tech_analysis: TechnicalAnalysis = None):
+    """Trading analysis tools — consume DataProvider, never a concrete client."""
+
+    def __init__(
+        self,
+        provider: DataProvider = None,
+        tech_analysis: TechnicalAnalysis = None,
+    ):
         """
-        Initialize trading tools
-        
         Args:
-            wafa_api: WafaBourseAPI instance (creates new one if not provided)
-            tech_analysis: TechnicalAnalysis instance (creates new one if not provided)
+            provider: any DataProvider. Defaults to a cache-wrapped WafaBourse.
+            tech_analysis: indicator calculator.
         """
-        self.wafa_api = wafa_api or WafaBourseAPI()
+        self.provider = provider or CachingDataProvider(WafaBourseProvider())
         self.tech_analysis = tech_analysis or TechnicalAnalysis()
     
     def get_tool_definitions(self) -> List[Dict]:
@@ -313,11 +315,11 @@ class TradingTools:
     
     def _get_market_overview(self, tool_input: Dict = None) -> str:
         """Get market overview data"""
-        index = self.wafa_api.get_market_index()
-        gainers = self.wafa_api.get_top_movers('H')
-        losers = self.wafa_api.get_top_movers('B')
-        active = self.wafa_api.get_top_movers('V')
-        status = self.wafa_api.get_market_status()
+        index = self.provider.get_market_index()
+        gainers = self.provider.get_top_movers('H')
+        losers = self.provider.get_top_movers('B')
+        active = self.provider.get_top_movers('V')
+        status = self.provider.get_market_status()
         
         return json.dumps({
             "market_status": status.get('Statut') if status else 'Unknown',
@@ -336,7 +338,7 @@ class TradingTools:
     def _get_stock_snapshot(self, tool_input: Dict) -> str:
         """Get stock snapshot data"""
         symbol = tool_input['symbol']
-        details = self.wafa_api.get_stock_details(symbol)
+        details = self.provider.get_stock_details(symbol)
         
         if not details:
             return f"Error: Could not fetch data for {symbol}"
@@ -362,7 +364,7 @@ class TradingTools:
         symbol = tool_input['symbol']
         indicators = tool_input.get('indicators', [])
         
-        history = self.wafa_api.get_price_history(symbol)
+        history = self.provider.get_price_history(symbol)
         if not history:
             return f"Error: No historical data for {symbol}"
         
@@ -389,7 +391,7 @@ class TradingTools:
     def _get_order_book(self, tool_input: Dict) -> str:
         """Get order book data"""
         symbol = tool_input['symbol']
-        order_book = self.wafa_api.get_order_book(symbol, 5)
+        order_book = self.provider.get_order_book(symbol, 5)
         
         if not order_book:
             return f"Error: No order book data for {symbol}"
@@ -421,7 +423,7 @@ class TradingTools:
         symbol = tool_input['symbol']
         days = tool_input.get('days', 30)
         
-        history = self.wafa_api.get_price_history(symbol)
+        history = self.provider.get_price_history(symbol)
         if not history:
             return f"Error: No history for {symbol}"
         
@@ -436,8 +438,8 @@ class TradingTools:
     def _analyze_volume_profile(self, tool_input: Dict) -> str:
         """Analyze volume profile"""
         symbol = tool_input['symbol']
-        history = self.wafa_api.get_price_history(symbol)
-        details = self.wafa_api.get_stock_details(symbol)
+        history = self.provider.get_price_history(symbol)
+        details = self.provider.get_stock_details(symbol)
         
         if not history or not details:
             return f"Error: Could not analyze volume for {symbol}"
@@ -460,7 +462,7 @@ class TradingTools:
         """Get all stocks data"""
         tool_input = tool_input or {}
         limit = tool_input.get('limit', None)
-        all_tickers = self.wafa_api.get_all_tickers()
+        all_tickers = self.provider.get_all_tickers()
         
         if not all_tickers:
             return "Error: Could not fetch all stocks"
@@ -492,7 +494,7 @@ class TradingTools:
     def _get_company_profile(self, tool_input: Dict) -> str:
         """Get company profile data"""
         symbol = tool_input['symbol']
-        profile = self.wafa_api.get_company_profile(symbol)
+        profile = self.provider.get_company_profile(symbol)
         
         if not profile:
             return f"Error: Could not fetch company profile for {symbol}"
@@ -517,7 +519,7 @@ class TradingTools:
     def _get_shareholders(self, tool_input: Dict) -> str:
         """Get shareholders data"""
         symbol = tool_input['symbol']
-        shareholders = self.wafa_api.get_shareholders(symbol)
+        shareholders = self.provider.get_shareholders(symbol)
         
         if not shareholders:
             return f"Error: Could not fetch shareholders for {symbol}"
@@ -552,7 +554,7 @@ class TradingTools:
     def _get_financial_metrics(self, tool_input: Dict) -> str:
         """Get financial metrics data"""
         symbol = tool_input['symbol']
-        metrics = self.wafa_api.get_financial_metrics(symbol)
+        metrics = self.provider.get_financial_metrics(symbol)
         
         if not metrics:
             return f"Error: Could not fetch financial metrics for {symbol}"
@@ -612,7 +614,7 @@ class TradingTools:
         symbol = tool_input['symbol']
         limit = tool_input.get('limit', 20)
         
-        trades = self.wafa_api.get_recent_trades(symbol)
+        trades = self.provider.get_recent_trades(symbol)
         
         if not trades:
             return f"Error: Could not fetch recent trades for {symbol}"
@@ -676,7 +678,7 @@ class TradingTools:
         direction = tool_input.get('direction', 'all')
         limit = tool_input.get('limit', 10)
         
-        all_tickers = self.wafa_api.get_all_tickers()
+        all_tickers = self.provider.get_all_tickers()
         
         if not all_tickers:
             return "Error: Could not fetch stocks for screening"
@@ -733,8 +735,8 @@ class TradingTools:
         symbol = tool_input['symbol']
         period = tool_input.get('period', 14)
         
-        history = self.wafa_api.get_price_history(symbol)
-        details = self.wafa_api.get_stock_details(symbol)
+        history = self.provider.get_price_history(symbol)
+        details = self.provider.get_stock_details(symbol)
         
         if not history or len(history) < period + 5:
             return f"Error: Insufficient historical data for {symbol}"
@@ -801,7 +803,7 @@ class TradingTools:
         symbol = tool_input['symbol']
         lookback = tool_input.get('lookback', 30)
         
-        history = self.wafa_api.get_price_history(symbol)
+        history = self.provider.get_price_history(symbol)
         
         if not history or len(history) < lookback:
             return f"Error: Insufficient historical data for {symbol} (need {lookback} days)"
@@ -852,8 +854,8 @@ class TradingTools:
     
     def _get_market_breadth(self, tool_input: Dict = None) -> str:
         """Get market breadth indicators"""
-        all_tickers = self.wafa_api.get_all_tickers()
-        index = self.wafa_api.get_market_index()
+        all_tickers = self.provider.get_all_tickers()
+        index = self.provider.get_market_index()
         
         if not all_tickers:
             return "Error: Could not fetch market data"
@@ -940,8 +942,8 @@ class TradingTools:
         comparisons = []
         
         for symbol in symbols:
-            details = self.wafa_api.get_stock_details(symbol)
-            history = self.wafa_api.get_price_history(symbol)
+            details = self.provider.get_stock_details(symbol)
+            history = self.provider.get_price_history(symbol)
             
             if not details:
                 comparisons.append({"symbol": symbol, "error": "Could not fetch data"})
@@ -997,8 +999,8 @@ class TradingTools:
         """Analyze intraday momentum"""
         symbol = tool_input['symbol']
         
-        details = self.wafa_api.get_stock_details(symbol)
-        order_book = self.wafa_api.get_order_book(symbol, 5)
+        details = self.provider.get_stock_details(symbol)
+        order_book = self.provider.get_order_book(symbol, 5)
         
         if not details:
             return f"Error: Could not fetch data for {symbol}"

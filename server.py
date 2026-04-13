@@ -1,42 +1,50 @@
 """
-WafaBourse MCP Server
-Exposes Casablanca Stock Exchange tools for Claude Desktop
+Casabourse Lens MCP Server.
+
+Composes the data stack (WafaBourse provider → DuckDB cache → trading
+tools) and exposes it over MCP stdio. The server is the only place
+that knows which concrete provider is wired in — everything below
+consumes the DataProvider interface.
 """
 
 import asyncio
+import logging
+
+from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp import types
 
-from trading_tools.api import WafaBourseAPI
-from trading_tools.technical_analysis import TechnicalAnalysis
-from trading_tools.tools import TradingTools
+from trading_tools import (
+    CachingDataProvider,
+    TechnicalAnalysis,
+    TradingTools,
+    WafaBourseProvider,
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
+)
 
 
 def build_mcp_tools(tool_defs: list) -> list[types.Tool]:
-    """Convert OpenAI-format tool definitions to MCP Tool objects"""
-    mcp_tools = []
-    for t in tool_defs:
-        fn = t["function"]
-        mcp_tools.append(
-            types.Tool(
-                name=fn["name"],
-                description=fn["description"],
-                inputSchema=fn["parameters"],
-            )
+    """Convert OpenAI-format tool definitions to MCP Tool objects."""
+    return [
+        types.Tool(
+            name=t["function"]["name"],
+            description=t["function"]["description"],
+            inputSchema=t["function"]["parameters"],
         )
-    return mcp_tools
+        for t in tool_defs
+    ]
 
 
 def main():
-    wafa_api = WafaBourseAPI()
-    tech_analysis = TechnicalAnalysis()
-    trading_tools = TradingTools(wafa_api, tech_analysis)
+    provider = CachingDataProvider(WafaBourseProvider())
+    trading_tools = TradingTools(provider, TechnicalAnalysis())
 
-    tool_defs = trading_tools.get_tool_definitions()
-    mcp_tool_list = build_mcp_tools(tool_defs)
-
-    server = Server("wafabourse")
+    mcp_tool_list = build_mcp_tools(trading_tools.get_tool_definitions())
+    server = Server("casabourse-lens")
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:

@@ -1,14 +1,29 @@
 """
-Trading Tools Package
-A comprehensive toolkit for stock market analysis and trading on WafaBourse
+Casabourse Lens trading tools.
+
+Public surface: the DataProvider contract, its concrete & caching
+implementations, the technical-analysis helper, and the TradingTools
+orchestrator consumed by the MCP server.
 """
 
-from .api import WafaBourseAPI
+from .providers import (
+    CachingDataProvider,
+    DataClass,
+    DataProvider,
+    ProviderError,
+    TTLPolicy,
+    WafaBourseProvider,
+)
 from .technical_analysis import TechnicalAnalysis
 from .tools import TradingTools
 
 __all__ = [
-    'WafaBourseAPI',
-    'TechnicalAnalysis', 
-    'TradingTools',
+    "CachingDataProvider",
+    "DataClass",
+    "DataProvider",
+    "ProviderError",
+    "TTLPolicy",
+    "TechnicalAnalysis",
+    "TradingTools",
+    "WafaBourseProvider",
 ]
