@@ -8,8 +8,8 @@ Tools to add next, ranked by impact on recommendation quality.
 
 | # | Tool | Description | Category | Why it matters | Difficulty |
 |---|---|---|---|---|---|
-| 1 | `get_corporate_actions` | Ex-dividend dates, dividend amounts, stock splits, capital increases per ticker. | Data quality | Without this, every RSI/MACD across an ex-div date is a false signal. Non-negotiable. | 🟡 |
-| 2 | `get_adjusted_price_history` | OHLCV back-adjusted for dividends & splits. Replaces raw history for indicator inputs. | Data quality | Technical indicators on unadjusted series are garbage. Depends on #1. | 🟡 |
+| 1 | `get_corporate_actions` ✅ **done** | Ex-dividend dates, dividend amounts, stock splits, capital increases per ticker. Backed by an event-log + reconciler store with per-field source precedence and point-in-time queries. | Data quality | Without this, every RSI/MACD across an ex-div date is a false signal. Non-negotiable. | 🟡 |
+| 2 | `get_adjusted_price_history` ✅ **done** | OHLCV back-adjusted for dividends & splits. Replaces raw history for indicator inputs. | Data quality | Technical indicators on unadjusted series are garbage. Depends on #1. | 🟡 |
 | 3 | `get_earnings_calendar` | Next earnings/publication date per ticker from AMMC filings. | Event risk | Stops the agent from recommending a trade 2 days before a binary event. | 🟡 |
 | 4 | `get_regulatory_filings` | AMMC notices: tender offers (OPA/OPR/OPE), profit warnings, material disclosures. | Event risk | Catches market-moving news the tape hasn't priced yet. | 🟡 |
 | 5 | `get_macro_snapshot` | BAM policy rate, 13w/52w T-bill yield, CPI YoY, equity risk premium vs. MASI dividend yield. | Macro | Moroccan equities (esp. banks ≈35% of MASI) are rate-sensitive. Context the ticker doesn't show. | 🟢 |
@@ -37,7 +37,7 @@ Build in this sequence for maximum recommendation-quality gain per unit of work:
 
 1. ~~**#22** (provider refactor) — foundation, makes everything else 3× cheaper.~~ ✅ shipped on `v2`
 2. ~~**#21** (DuckDB cache) — unlocks history, backtesting, and resilience.~~ ✅ shipped on `v2`
-3. **#1 + #2** (corporate actions + adjusted prices) — biggest data-quality fix. ← **next**
+3. ~~**#1 + #2** (corporate actions + adjusted prices) — biggest data-quality fix.~~ ✅ shipped on `feat/corporate-actions-adjusted-prices`
 4. **#5, #6, #15** (macro, FX, commodities) — all easy, huge context payoff.
 5. **#12, #19, #20** (orderflow imbalance, correlation, beta) — pure computation over existing data.
 6. **#13 + #14** (news + sentiment) — the thing the tape doesn't show.

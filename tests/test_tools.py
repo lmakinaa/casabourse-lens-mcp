@@ -14,10 +14,12 @@ import pytest
 
 
 # --------------------------------------------------------------------- #
-# Tool registry — 17 tools on main, 17 on v2 (contract unchanged)
+# Tool registry — 17 core tools must exist on every branch. Branches
+# may add more (e.g. corporate-action tools on feat/corporate-actions);
+# the core set is the stable contract.
 # --------------------------------------------------------------------- #
 
-EXPECTED_TOOLS = {
+CORE_TOOLS = {
     "get_market_overview",
     "get_stock_snapshot",
     "get_technical_analysis",
@@ -41,7 +43,8 @@ EXPECTED_TOOLS = {
 def test_tool_definitions_are_openai_shaped(tools):
     defs = tools.get_tool_definitions()
     names = {d["function"]["name"] for d in defs}
-    assert names == EXPECTED_TOOLS, f"tool set drift: {names ^ EXPECTED_TOOLS}"
+    missing = CORE_TOOLS - names
+    assert not missing, f"core tools missing: {missing}"
     for d in defs:
         assert d["type"] == "function"
         fn = d["function"]

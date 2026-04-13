@@ -4,8 +4,10 @@ AI agent tools for market analysis and trading decisions
 """
 
 import json
-from typing import Dict, List
+from datetime import date, datetime, timezone
+from typing import Dict, List, Optional
 
+from .corporate_actions import CorporateActionService, EventType
 from .providers import CachingDataProvider, DataProvider, WafaBourseProvider
 from .technical_analysis import TechnicalAnalysis
 
@@ -17,14 +19,19 @@ class TradingTools:
         self,
         provider: DataProvider = None,
         tech_analysis: TechnicalAnalysis = None,
+        corporate_actions: Optional[CorporateActionService] = None,
     ):
         """
         Args:
             provider: any DataProvider. Defaults to a cache-wrapped WafaBourse.
             tech_analysis: indicator calculator.
+            corporate_actions: optional CA service. If None, CA-aware tools
+                return a clear error explaining the store isn't configured —
+                the rest of the toolset keeps working.
         """
         self.provider = provider or CachingDataProvider(WafaBourseProvider())
         self.tech_analysis = tech_analysis or TechnicalAnalysis()
+        self.corporate_actions = corporate_actions
     
     def get_tool_definitions(self) -> List[Dict]:
         """Get OpenAI-compatible tool definitions"""
@@ -279,6 +286,58 @@ class TradingTools:
                         "required": ["symbol"]
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_corporate_actions",
+                    "description": (
+                        "Return dividend, split, capital-increase, and rights-issue events "
+                        "for a stock with full provenance (source, confidence, status). "
+                        "Supports point-in-time queries via `as_of` so backtests never see "
+                        "future-back-dated data. Always check the `warnings` and `coverage` "
+                        "fields before acting on the data."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string", "description": "Stock symbol"},
+                            "from_date": {"type": "string", "description": "ISO date; include events with ex_date >= from_date"},
+                            "to_date": {"type": "string", "description": "ISO date; include events with ex_date <= to_date"},
+                            "as_of": {"type": "string", "description": "ISO datetime; only consider observations seen on/before this instant (point-in-time)"},
+                            "event_types": {
+                                "type": "array",
+                                "items": {"type": "string", "enum": ["dividend", "split", "capital_increase", "rights_issue"]},
+                                "description": "Filter to these event types; omit for all"
+                            },
+                            "include_pending": {"type": "boolean", "description": "Include pending_review and disputed events (default false)"}
+                        },
+                        "required": ["symbol"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_adjusted_price_history",
+                    "description": (
+                        "Return OHLCV history with prices and volumes back-adjusted for "
+                        "dividends and splits. Use this for ALL technical indicator inputs — "
+                        "RSI/MACD on unadjusted series across an ex-dividend date are false "
+                        "signals. Response includes the adjustment factors applied and any "
+                        "events that were skipped (missing data, etc.)."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string", "description": "Stock symbol"},
+                            "days": {"type": "integer", "description": "Number of recent days to return (default 90)"},
+                            "as_of": {"type": "string", "description": "ISO datetime; apply only adjustments known on/before this instant"},
+                            "include_pending": {"type": "boolean", "description": "Apply pending_review events too (default false)"}
+                        },
+                        "required": ["symbol"]
+                    }
+                }
             }
         ]
     
@@ -303,6 +362,8 @@ class TradingTools:
             "get_market_breadth": self._get_market_breadth,
             "compare_stocks": self._compare_stocks,
             "get_intraday_momentum": self._get_intraday_momentum,
+            "get_corporate_actions": self._get_corporate_actions,
+            "get_adjusted_price_history": self._get_adjusted_price_history,
         }
         
         try:
@@ -1087,3 +1148,126 @@ class TradingTools:
             "overall_momentum": overall,
             "interpretation": f"{'Buyers in control' if overall == 'BULLISH' else 'Sellers in control' if overall == 'BEARISH' else 'Balanced'} - price at {position_in_range:.0f}% of day range"
         }, indent=2)
+
+    # ── corporate-action tools ──────────────────────────────────
+
+    def _require_ca_service(self) -> Optional[str]:
+        if self.corporate_actions is None:
+            return (
+                "Error: corporate-action service not configured. "
+                "Initialise server with a CorporateActionStore to enable this tool."
+            )
+        return None
+
+    def _parse_as_of(self, raw: Optional[str]) -> Optional[datetime]:
+        if raw is None:
+            return None
+        value = raw.strip()
+        if not value:
+            return None
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(f"invalid as_of {raw!r}: {exc}") from exc
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    @staticmethod
+    def _parse_iso_date(raw: Optional[str]) -> Optional[date]:
+        if not raw:
+            return None
+        return date.fromisoformat(raw[:10])
+
+    def _get_corporate_actions(self, tool_input: Dict) -> str:
+        err = self._require_ca_service()
+        if err:
+            return err
+
+        symbol = tool_input["symbol"]
+        try:
+            from_date = self._parse_iso_date(tool_input.get("from_date"))
+            to_date = self._parse_iso_date(tool_input.get("to_date"))
+            as_of = self._parse_as_of(tool_input.get("as_of"))
+        except ValueError as exc:
+            return f"Error: {exc}"
+
+        event_types = None
+        raw_types = tool_input.get("event_types")
+        if raw_types:
+            try:
+                event_types = [EventType(t) for t in raw_types]
+            except ValueError as exc:
+                return f"Error: invalid event_type — {exc}"
+
+        include_pending = bool(tool_input.get("include_pending", False))
+
+        events, metadata = self.corporate_actions.get_events(
+            symbol,
+            from_date=from_date,
+            to_date=to_date,
+            event_types=event_types,
+            as_of=as_of,
+            include_pending=include_pending,
+        )
+
+        return json.dumps(
+            {
+                "symbol": metadata["symbol"],
+                "as_of": metadata["as_of"],
+                "coverage": metadata["coverage"],
+                "warnings": metadata["warnings"],
+                "event_count": metadata["event_count"],
+                "events": [e.to_dict() for e in events],
+            },
+            indent=2,
+        )
+
+    def _get_adjusted_price_history(self, tool_input: Dict) -> str:
+        err = self._require_ca_service()
+        if err:
+            return err
+
+        symbol = tool_input["symbol"]
+        days = int(tool_input.get("days", 90))
+        try:
+            as_of = self._parse_as_of(tool_input.get("as_of"))
+        except ValueError as exc:
+            return f"Error: {exc}"
+        include_pending = bool(tool_input.get("include_pending", False))
+
+        raw_history = self.provider.get_price_history(symbol)
+        if not raw_history:
+            return f"Error: No history for {symbol}"
+
+        bars, report, metadata = self.corporate_actions.adjust_history(
+            symbol,
+            raw_history,
+            as_of=as_of,
+            include_pending=include_pending,
+        )
+        recent = bars[-days:] if days > 0 else bars
+
+        return json.dumps(
+            {
+                "symbol": metadata["symbol"],
+                "as_of": metadata["as_of"],
+                "days": len(recent),
+                "coverage": metadata["coverage"],
+                "warnings": metadata["warnings"],
+                "adjustments_applied": [
+                    {
+                        "ex_date": a.ex_date.isoformat(),
+                        "event_type": a.event_type,
+                        "factor": round(a.factor, 8),
+                        "note": a.note,
+                    }
+                    for a in report.applied
+                ],
+                "adjustments_skipped": report.skipped,
+                "data": [b.to_dict() for b in recent],
+            },
+            indent=2,
+        )

@@ -9,6 +9,8 @@ consumes the DataProvider interface.
 
 import asyncio
 import logging
+import os
+from pathlib import Path
 
 from mcp import types
 from mcp.server import Server
@@ -20,11 +22,18 @@ from trading_tools import (
     TradingTools,
     WafaBourseProvider,
 )
+from trading_tools.corporate_actions import (
+    CorporateActionService,
+    CorporateActionStore,
+)
 
 logging.basicConfig(
     level=logging.INFO,
     format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
 )
+
+REPO_ROOT = Path(__file__).resolve().parent
+CA_DB_PATH = Path(os.environ.get("CASABOURSE_CA_DB", REPO_ROOT / "data" / "corporate_actions.sqlite"))
 
 
 def build_mcp_tools(tool_defs: list) -> list[types.Tool]:
@@ -41,7 +50,9 @@ def build_mcp_tools(tool_defs: list) -> list[types.Tool]:
 
 def main():
     provider = CachingDataProvider(WafaBourseProvider())
-    trading_tools = TradingTools(provider, TechnicalAnalysis())
+    ca_store = CorporateActionStore(CA_DB_PATH)
+    ca_service = CorporateActionService(ca_store)
+    trading_tools = TradingTools(provider, TechnicalAnalysis(), ca_service)
 
     mcp_tool_list = build_mcp_tools(trading_tools.get_tool_definitions())
     server = Server("casabourse-lens")

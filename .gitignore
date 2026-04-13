@@ -6,3 +6,5 @@ cache.duckdb
 cache.duckdb.wal
 .claude/
 .pytest_cache/
+data/corporate_actions.sqlite
+data/corporate_actions.sqlite-*
