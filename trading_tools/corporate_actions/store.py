@@ -148,6 +148,16 @@ class CorporateActionStore:
         same (source, observation_hash) return the existing row id.
         Returns the row id of the observation (new or pre-existing).
         """
+        obs_id, _created = self.record_observation_with_status(obs)
+        return obs_id
+
+    def record_observation_with_status(self, obs: CandidateObservation) -> tuple[int, bool]:
+        """
+        Append an observation and return (id, created).
+
+        `created` is True only when a new row is inserted; False when
+        the observation already existed (same source + hash).
+        """
         obs_hash = obs.observation_hash()
         with self._tx() as conn:
             existing = conn.execute(
@@ -159,7 +169,7 @@ class CorporateActionStore:
                     "ca.obs.idempotent_skip",
                     extra={"source": obs.source, "hash": obs_hash[:12]},
                 )
-                return int(existing["id"])
+                return int(existing["id"]), False
 
             cur = conn.execute(
                 """
@@ -181,7 +191,7 @@ class CorporateActionStore:
                     obs.confidence.value,
                 ),
             )
-            return int(cur.lastrowid)
+            return int(cur.lastrowid), True
 
     def upsert_event(self, event: CorporateAction) -> None:
         """

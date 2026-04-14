@@ -64,7 +64,6 @@ class IngestionPipeline:
         touched_symbols: set[str] = set()
         today = self._today or date.today()
 
-        seen_ids: set[int] = set()
         for obs in observations:
             try:
                 obs_warnings = validate_observation(obs, today=today)
@@ -81,18 +80,11 @@ class IngestionPipeline:
                     f"{obs.symbol} {obs.ex_date} ({obs.source}): {w}" for w in obs_warnings
                 )
 
-            obs_id = self._store.record_observation(obs)
-            if obs_id in seen_ids:
-                result.duplicates += 1
-            else:
-                seen_ids.add(obs_id)
-                # record_observation returns the existing id for dupes;
-                # distinguish new vs existing by checking row count via a
-                # second lookup is overkill — infer from whether this id
-                # was seen within THIS ingest call. For cross-call
-                # idempotency (re-ingest next day), we rely on the UNIQUE
-                # constraint + log below.
+            _, created = self._store.record_observation_with_status(obs)
+            if created:
                 result.accepted += 1
+            else:
+                result.duplicates += 1
 
             touched_symbols.add(obs.symbol)
 

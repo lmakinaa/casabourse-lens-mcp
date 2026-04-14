@@ -1,0 +1,43 @@
+{
+  "jsonapi": {"version": "1.0"},
+  "data": [
+    {
+      "id": "111",
+      "type": "node--dividende",
+      "attributes": {
+        "name": "Dividendes (ATTIJARIWAFA BANK) - 2024",
+        "dateDetachement": "15/03/2024",
+        "datePaiement": "29/03/2024",
+        "montantDividende": "19.00",
+        "drupal_internal__tid": 1001
+      }
+    },
+    {
+      "id": "112",
+      "type": "node--dividende",
+      "attributes": {
+        "name": "Dividendes (UNKNOWN CORP) - 2024",
+        "dateDetachement": "10/04/2024",
+        "datePaiement": "22/04/2024",
+        "montantDividende": "2.50",
+        "drupal_internal__tid": 1002
+      }
+    },
+    {
+      "id": "113",
+      "type": "node--dividende",
+      "attributes": {
+        "name": "Dividendes (ITISSALAT AL MAGHRIB) - 2019",
+        "dateDetachement": "15/05/2019",
+        "datePaiement": "30/05/2019",
+        "montantDividende": "6.30",
+        "drupal_internal__tid": 1003
+      }
+    }
+  ],
+  "links": {
+    "next": {
+      "href": "https://api.casablanca-bourse.com/fr/api/emetteurs/dividendes?page%5Boffset%5D=50&page%5Blimit%5D=50"
+    }
+  }
+}

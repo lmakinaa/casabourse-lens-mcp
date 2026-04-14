@@ -31,6 +31,16 @@ Tools to add next, ranked by impact on recommendation quality.
 | 21 | **DuckDB cache layer** *(infra, not a tool)* ✅ **done** | Write-through cache for quotes, OHLCV, fundamentals, corporate actions with per-class TTLs. | Infra | Unlocks #18, fixes the WafaBourse single-point-of-failure, enables historical features. | 🔴 |
 | 22 | **`DataProvider` refactor** *(infra, not a tool)* ✅ **done** | Pluggable provider interface so WafaBourse isn't hardcoded into every tool. | Infra | Without this, adding AMMC, BAM, news, and FX means touching 17 tool methods. Do this *before* #1. | 🟡 |
 
+## Current Milestone Status (Apr 2026)
+
+- ✅ Corporate-actions read path is live (`get_corporate_actions`, `get_adjusted_price_history`).
+- ✅ Corporate-actions write path Phase 1 is live for BC dividends:
+	- `ingestion scrape-bourse` handler implemented
+	- TLS/retry/throttle HTTP client in place
+	- BC agent + issuer mapping in place
+	- end-to-end ingestion tests added and passing
+- 🔜 Next highest-ROI roadmap items remain **#5, #6, #15** (macro, FX, commodities), then **#12, #19, #20**.
+
 ## Suggested Build Order
 
 Build in this sequence for maximum recommendation-quality gain per unit of work:
@@ -38,6 +48,7 @@ Build in this sequence for maximum recommendation-quality gain per unit of work:
 1. ~~**#22** (provider refactor) — foundation, makes everything else 3× cheaper.~~ ✅ shipped on `v2`
 2. ~~**#21** (DuckDB cache) — unlocks history, backtesting, and resilience.~~ ✅ shipped on `v2`
 3. ~~**#1 + #2** (corporate actions + adjusted prices) — biggest data-quality fix.~~ ✅ shipped on `feat/corporate-actions-adjusted-prices`
+	- ✅ Phase 1 ingestion (BC dividends write path + `scrape-bourse` CLI + tests) completed.
 4. **#5, #6, #15** (macro, FX, commodities) — all easy, huge context payoff.
 5. **#12, #19, #20** (orderflow imbalance, correlation, beta) — pure computation over existing data.
 6. **#13 + #14** (news + sentiment) — the thing the tape doesn't show.

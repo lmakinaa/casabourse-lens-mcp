@@ -35,7 +35,8 @@ from trading_tools.corporate_actions import (
     Reconciler,
 )
 
-from .agents import ManualAgent
+from .agents import BourseCasaAgent, ManualAgent, load_issuer_map
+from .http import PoliteClient
 from .pipeline import IngestionPipeline
 
 
@@ -76,6 +77,28 @@ def _build_parser() -> argparse.ArgumentParser:
     cov = sub.add_parser("coverage", help="Show source coverage for a symbol")
     cov.add_argument("--symbol", required=True)
 
+    bc = sub.add_parser(
+        "scrape-bourse",
+        help="Scrape Bourse de Casablanca dividends into the store",
+    )
+    bc.add_argument("--since", required=True, help="ISO date (inclusive)")
+    bc.add_argument("--until", help="ISO date (inclusive); defaults to today")
+    bc.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print candidate observations as JSON; skip DB writes",
+    )
+    bc.add_argument(
+        "--user-agent",
+        default="casabourse-lens/0.1 (+https://github.com/ijaija/casabourse-lens)",
+    )
+    bc.add_argument(
+        "--min-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between requests to a given host (default 1.0)",
+    )
+
     return parser
 
 
@@ -93,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_show(store, args)
         if args.command == "coverage":
             return _cmd_coverage(store, args)
+        if args.command == "scrape-bourse":
+            return _cmd_scrape_bourse(store, args)
     finally:
         store.close()
 
@@ -173,6 +198,66 @@ def _cmd_show(store: CorporateActionStore, args: argparse.Namespace) -> int:
 def _cmd_coverage(store: CorporateActionStore, args: argparse.Namespace) -> int:
     print(json.dumps(store.coverage(args.symbol.strip().upper()), indent=2))
     return 0
+
+
+def _cmd_scrape_bourse(store: CorporateActionStore, args: argparse.Namespace) -> int:
+    try:
+        since = date.fromisoformat(args.since)
+    except ValueError:
+        print(f"error: invalid --since date: {args.since!r}", file=sys.stderr)
+        return 2
+
+    until_raw = args.until or date.today().isoformat()
+    try:
+        until = date.fromisoformat(until_raw)
+    except ValueError:
+        print(f"error: invalid --until date: {until_raw!r}", file=sys.stderr)
+        return 2
+
+    if since > until:
+        print("error: --since must be <= --until", file=sys.stderr)
+        return 2
+
+    with PoliteClient(user_agent=args.user_agent, min_interval=args.min_interval) as client:
+        agent = BourseCasaAgent(client, issuer_map=load_issuer_map())
+        observations = list(agent.run(since=since, until=until))
+
+    if args.dry_run:
+        print(
+            json.dumps(
+                [
+                    {
+                        "symbol": obs.symbol,
+                        "event_type": obs.event_type.value,
+                        "ex_date": obs.ex_date.isoformat(),
+                        "payload": obs.payload,
+                        "source": obs.source,
+                        "confidence": obs.confidence.value,
+                        "source_url": obs.source_url,
+                        "source_ref": obs.source_ref,
+                        "observed_at": obs.observed_at,
+                    }
+                    for obs in observations
+                ],
+                indent=2,
+            )
+        )
+        return 0
+
+    pipeline = IngestionPipeline(store)
+    result = pipeline.ingest(observations)
+    print(
+        json.dumps(
+            {
+                "accepted": result.accepted,
+                "rejected": result.rejected,
+                "warnings": result.warnings,
+                "reconciled_symbols": result.reconciled_symbols,
+            },
+            indent=2,
+        )
+    )
+    return 0 if not result.rejected else 1
 
 
 if __name__ == "__main__":

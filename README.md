@@ -20,7 +20,7 @@ Connect this server to Claude Desktop and you can ask things like:
 >
 > "Find me stocks that are up today with high volume"
 
-Claude gets **17 tools** for market data, technicals, fundamentals, and trading analysis — all hitting live data from WafaBourse.
+Claude gets **19 tools** for market data, technicals, fundamentals, and corporate-actions-aware analysis.
 
 ## Tools
 
@@ -30,6 +30,7 @@ Claude gets **17 tools** for market data, technicals, fundamentals, and trading 
 | **Stock Analysis** | `get_stock_snapshot` `get_technical_analysis` `get_order_book` `get_price_history` `get_recent_trades` |
 | **Trading** | `analyze_volume_profile` `get_volatility_analysis` `get_support_resistance` `get_intraday_momentum` `compare_stocks` |
 | **Fundamentals** | `get_company_profile` `get_shareholders` `get_financial_metrics` |
+| **Corporate Actions** | `get_corporate_actions` `get_adjusted_price_history` |
 
 ## Setup
 
@@ -69,10 +70,12 @@ Add the server:
 ```
 casabourse-lens/
 ├── server.py                  # MCP server entry point
+├── ingestion/                 # Corporate-actions ingestion pipeline + CLI agents
 ├── trading_tools/
-│   ├── api.py                 # WafaBourse API client
+│   ├── providers/             # Data providers (WafaBourse + cache)
+│   ├── corporate_actions/     # Event store, reconciler, adjuster
 │   ├── technical_analysis.py  # SMA, EMA, RSI, MACD, Bollinger, ATR, VWAP
-│   ├── tools.py               # 17 tool implementations
+│   ├── tools/                 # Tool implementations
 │   └── config.py              # API configuration
 ├── requirements.txt
 └── README.md
@@ -87,7 +90,27 @@ Claude Desktop  <-->  MCP Server  <-->  WafaBourse API
                        (stdio)          (Casablanca Stock Exchange)
 ```
 
-No API keys needed — WafaBourse data is publicly accessible.
+No API keys needed — WafaBourse/BC data is publicly accessible.
+
+## Corporate Actions Ingestion
+
+Run the Bourse de Casablanca dividends scraper:
+
+```bash
+python -m ingestion scrape-bourse --since 2024-01-01
+```
+
+Dry-run (prints candidate observations, no DB writes):
+
+```bash
+python -m ingestion scrape-bourse --since 2024-01-01 --dry-run
+```
+
+Container worker cron example (daily at 06:10):
+
+```cron
+10 6 * * * /app/.venv/bin/python -m ingestion --db /data/corporate_actions.sqlite scrape-bourse --since 2015-01-01 >> /var/log/casabourse-ingestion.log 2>&1
+```
 
 ## Technical Indicators
 
