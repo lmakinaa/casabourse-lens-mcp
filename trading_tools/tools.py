@@ -1,15 +1,60 @@
 """
 Trading Tools Module
-AI agent tools for market analysis and trading decisions
+AI agent tools for market analysis and trading decisions.
+
+Tools are registered with the `@tool(...)` decorator on the handler
+method. The decorator attaches the OpenAI-shaped schema to the
+function object; `get_tool_definitions()` and `execute_tool()` read
+from that single source of truth. No triple declaration, no
+dispatch dict to keep in sync — rename a tool by editing one
+decorator.
 """
 
 import json
 from datetime import date, datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .corporate_actions import CorporateActionService, EventType
 from .providers import CachingDataProvider, DataProvider, WafaBourseProvider
 from .technical_analysis import TechnicalAnalysis
+
+
+_TOOL_META_ATTR = "__tool_meta__"
+
+
+def tool(
+    *,
+    name: str,
+    description: str,
+    parameters: Dict[str, Any],
+) -> Callable[[Callable], Callable]:
+    """
+    Register a method as an MCP tool.
+
+    Stores the OpenAI-shaped schema on the function itself. The class
+    discovers decorated methods at first access via `_tool_registry`,
+    preserving declaration order so `get_tool_definitions()` is stable.
+    """
+
+    def decorator(fn: Callable) -> Callable:
+        setattr(
+            fn,
+            _TOOL_META_ATTR,
+            {
+                "name": name,
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": description,
+                        "parameters": parameters,
+                    },
+                },
+            },
+        )
+        return fn
+
+    return decorator
 
 
 class TradingTools:
@@ -33,347 +78,42 @@ class TradingTools:
         self.tech_analysis = tech_analysis or TechnicalAnalysis()
         self.corporate_actions = corporate_actions
     
+    # ── registry ─────────────────────────────────────────────────
+    #
+    # Single source of truth: each handler carries its schema via the
+    # @tool(...) decorator below. These two methods read that metadata —
+    # they don't maintain their own list.
+
+    @classmethod
+    def _iter_tool_handlers(cls):
+        """Yield (tool_name, unbound method) in class-declaration order."""
+        for attr_name, attr in vars(cls).items():
+            meta = getattr(attr, _TOOL_META_ATTR, None)
+            if meta is not None:
+                yield meta["name"], attr
+
     def get_tool_definitions(self) -> List[Dict]:
-        """Get OpenAI-compatible tool definitions"""
+        """Return OpenAI-compatible tool definitions from the decorator registry."""
         return [
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_market_overview",
-                    "description": "Get overall market status, MASI index, top gainers/losers, and market breadth. Use this first to understand market conditions.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function", 
-                "function": {
-                    "name": "get_stock_snapshot",
-                    "description": "Get current price, volume, and basic info for a specific stock symbol.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol (e.g., 'BCP', 'IAM', 'ATW')"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_technical_analysis",
-                    "description": "Calculate technical indicators (SMA, EMA, RSI, MACD, Bollinger Bands) for a stock. Requires historical data.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"},
-                            "indicators": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "List of indicators: 'sma20', 'sma50', 'ema12', 'rsi', 'macd', 'bollinger'"
-                            }
-                        },
-                        "required": ["symbol", "indicators"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_order_book",
-                    "description": "Get order book depth (bid/ask levels) to assess liquidity and buying/selling pressure.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_price_history",
-                    "description": "Get historical price data (daily OHLCV) for trend analysis and pattern recognition.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"},
-                            "days": {"type": "integer", "description": "Number of days of history (default 30)"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "analyze_volume_profile",
-                    "description": "Analyze recent trading volume patterns and compare to historical averages.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_all_stocks",
-                    "description": "Get complete list of all stocks trading on the exchange with current prices, changes, and volumes.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "limit": {"type": "integer", "description": "Maximum number of stocks to return (default: all)"}
-                        },
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_company_profile",
-                    "description": "Get detailed company profile including description, sector, IPO date, number of shares, market cap, and website. Useful for fundamental analysis and understanding what a company does.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol (e.g., 'ADH', 'BCP', 'IAM')"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_shareholders",
-                    "description": "Get shareholder structure showing major shareholders and their ownership percentages. Important for understanding ownership concentration and float.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol (e.g., 'ADH', 'BCP', 'IAM')"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_financial_metrics",
-                    "description": "Get key financial metrics and ratios including P/E ratio, dividend yield, P/B ratio, EPS, DPS, margins, revenue, and net income for the last 2 years. Essential for fundamental valuation.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol (e.g., 'ADH', 'BCP', 'IAM')"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_recent_trades",
-                    "description": "Get the most recent executed trades for a stock showing time, price, quantity and trade direction. Essential for understanding real-time price action and detecting large trades.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol (e.g., 'BCP', 'IAM', 'ATW')"},
-                            "limit": {"type": "integer", "description": "Maximum number of trades to return (default 20)"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "screen_stocks",
-                    "description": "Screen stocks based on criteria like minimum volume, price change, and sector. Useful for finding trading opportunities and filtering the universe of stocks.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "min_volume_mad": {"type": "number", "description": "Minimum trading volume in MAD (millions)"},
-                            "min_change_pct": {"type": "number", "description": "Minimum price change percentage"},
-                            "max_change_pct": {"type": "number", "description": "Maximum price change percentage"},
-                            "direction": {"type": "string", "description": "Filter by direction: 'up', 'down', or 'all'", "enum": ["up", "down", "all"]},
-                            "limit": {"type": "integer", "description": "Maximum number of results (default 10)"}
-                        },
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_volatility_analysis",
-                    "description": "Get volatility metrics including Average True Range (ATR), daily range analysis, and volatility classification. Critical for position sizing and stop-loss placement.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"},
-                            "period": {"type": "integer", "description": "ATR period in days (default 14)"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_support_resistance",
-                    "description": "Calculate key support and resistance levels based on swing highs/lows, period highs/lows, and price action analysis. Essential for identifying entry/exit points.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"},
-                            "lookback": {"type": "integer", "description": "Number of days to analyze (default 30)"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_market_breadth",
-                    "description": "Get market breadth indicators showing overall market health: advance/decline ratio, new highs/lows, percent above moving averages. Use for market timing decisions.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "compare_stocks",
-                    "description": "Compare multiple stocks side by side on key metrics including price performance, volume, volatility, and technicals. Useful for relative value analysis and pair trading.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbols": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "List of stock symbols to compare (2-5 stocks)"
-                            }
-                        },
-                        "required": ["symbols"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_intraday_momentum",
-                    "description": "Analyze intraday momentum by examining price relative to open, high, low, VWAP proximity, and buying/selling pressure. Key for timing entries during the trading day.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_corporate_actions",
-                    "description": (
-                        "Return dividend, split, capital-increase, and rights-issue events "
-                        "for a stock with full provenance (source, confidence, status). "
-                        "Supports point-in-time queries via `as_of` so backtests never see "
-                        "future-back-dated data. Always check the `warnings` and `coverage` "
-                        "fields before acting on the data."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"},
-                            "from_date": {"type": "string", "description": "ISO date; include events with ex_date >= from_date"},
-                            "to_date": {"type": "string", "description": "ISO date; include events with ex_date <= to_date"},
-                            "as_of": {"type": "string", "description": "ISO datetime; only consider observations seen on/before this instant (point-in-time)"},
-                            "event_types": {
-                                "type": "array",
-                                "items": {"type": "string", "enum": ["dividend", "split", "capital_increase", "rights_issue"]},
-                                "description": "Filter to these event types; omit for all"
-                            },
-                            "include_pending": {"type": "boolean", "description": "Include pending_review and disputed events (default false)"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_adjusted_price_history",
-                    "description": (
-                        "Return OHLCV history with prices and volumes back-adjusted for "
-                        "dividends and splits. Use this for ALL technical indicator inputs — "
-                        "RSI/MACD on unadjusted series across an ex-dividend date are false "
-                        "signals. Response includes the adjustment factors applied and any "
-                        "events that were skipped (missing data, etc.)."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "symbol": {"type": "string", "description": "Stock symbol"},
-                            "days": {"type": "integer", "description": "Number of recent days to return (default 90)"},
-                            "as_of": {"type": "string", "description": "ISO datetime; apply only adjustments known on/before this instant"},
-                            "include_pending": {"type": "boolean", "description": "Apply pending_review events too (default false)"}
-                        },
-                        "required": ["symbol"]
-                    }
-                }
-            }
+            getattr(fn, _TOOL_META_ATTR)["schema"]
+            for _, fn in self._iter_tool_handlers()
         ]
-    
+
     def execute_tool(self, tool_name: str, tool_input: Dict) -> str:
-        """Execute a tool and return results"""
-        
-        tool_handlers = {
-            "get_market_overview": self._get_market_overview,
-            "get_stock_snapshot": self._get_stock_snapshot,
-            "get_technical_analysis": self._get_technical_analysis,
-            "get_order_book": self._get_order_book,
-            "get_price_history": self._get_price_history,
-            "analyze_volume_profile": self._analyze_volume_profile,
-            "get_all_stocks": self._get_all_stocks,
-            "get_company_profile": self._get_company_profile,
-            "get_shareholders": self._get_shareholders,
-            "get_financial_metrics": self._get_financial_metrics,
-            "get_recent_trades": self._get_recent_trades,
-            "screen_stocks": self._screen_stocks,
-            "get_volatility_analysis": self._get_volatility_analysis,
-            "get_support_resistance": self._get_support_resistance,
-            "get_market_breadth": self._get_market_breadth,
-            "compare_stocks": self._compare_stocks,
-            "get_intraday_momentum": self._get_intraday_momentum,
-            "get_corporate_actions": self._get_corporate_actions,
-            "get_adjusted_price_history": self._get_adjusted_price_history,
-        }
-        
-        try:
-            handler = tool_handlers.get(tool_name)
-            if handler:
-                return handler(tool_input) if tool_input else handler()
-            return f"Error: Unknown tool {tool_name}"
-        except Exception as e:
-            return f"Error executing {tool_name}: {str(e)}"
+        """Dispatch to the decorated handler whose registered name matches."""
+        for name, fn in self._iter_tool_handlers():
+            if name == tool_name:
+                try:
+                    return fn(self, tool_input) if tool_input else fn(self)
+                except Exception as e:
+                    return f"Error executing {tool_name}: {str(e)}"
+        return f"Error: Unknown tool {tool_name}"
     
+    @tool(
+        name="get_market_overview",
+        description="Get overall market status, MASI index, top gainers/losers, and market breadth. Use this first to understand market conditions.",
+        parameters={"type": "object", "properties": {}, "required": []},
+    )
     def _get_market_overview(self, tool_input: Dict = None) -> str:
         """Get market overview data"""
         index = self.provider.get_market_index()
@@ -396,6 +136,17 @@ class TradingTools:
             "most_active": [{"symbol": s['Symbol'], "volume": s['Qte']} for s in (active or [])[:3]]
         }, indent=2)
     
+    @tool(
+        name="get_stock_snapshot",
+        description="Get current price, volume, and basic info for a specific stock symbol.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol (e.g., 'BCP', 'IAM', 'ATW')"}
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_stock_snapshot(self, tool_input: Dict) -> str:
         """Get stock snapshot data"""
         symbol = tool_input['symbol']
@@ -420,6 +171,22 @@ class TradingTools:
             "sell_pressure_pct": details['PourcentageVente']
         }, indent=2)
     
+    @tool(
+        name="get_technical_analysis",
+        description="Calculate technical indicators (SMA, EMA, RSI, MACD, Bollinger Bands) for a stock. Requires historical data.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"},
+                "indicators": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of indicators: 'sma20', 'sma50', 'ema12', 'rsi', 'macd', 'bollinger'",
+                },
+            },
+            "required": ["symbol", "indicators"],
+        },
+    )
     def _get_technical_analysis(self, tool_input: Dict) -> str:
         """Get technical analysis for a symbol"""
         symbol = tool_input['symbol']
@@ -449,6 +216,17 @@ class TradingTools:
         
         return json.dumps(results, indent=2)
     
+    @tool(
+        name="get_order_book",
+        description="Get order book depth (bid/ask levels) to assess liquidity and buying/selling pressure.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"}
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_order_book(self, tool_input: Dict) -> str:
         """Get order book data"""
         symbol = tool_input['symbol']
@@ -479,6 +257,18 @@ class TradingTools:
             "ask_levels": [{"price": l['Vente'], "qty": l['QteVente']} for l in order_book]
         }, indent=2)
     
+    @tool(
+        name="get_price_history",
+        description="Get historical price data (daily OHLCV) for trend analysis and pattern recognition.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"},
+                "days": {"type": "integer", "description": "Number of days of history (default 30)"},
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_price_history(self, tool_input: Dict) -> str:
         """Get price history data"""
         symbol = tool_input['symbol']
@@ -496,6 +286,17 @@ class TradingTools:
             "data": [{"date": d['Seance'], "close": d['Cours'], "volume": d['Volume']} for d in recent]
         }, indent=2)
     
+    @tool(
+        name="analyze_volume_profile",
+        description="Analyze recent trading volume patterns and compare to historical averages.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"}
+            },
+            "required": ["symbol"],
+        },
+    )
     def _analyze_volume_profile(self, tool_input: Dict) -> str:
         """Analyze volume profile"""
         symbol = tool_input['symbol']
@@ -519,6 +320,17 @@ class TradingTools:
             "interpretation": "High" if volume_ratio > 1.5 else "Normal" if volume_ratio > 0.7 else "Low"
         }, indent=2)
     
+    @tool(
+        name="get_all_stocks",
+        description="Get complete list of all stocks trading on the exchange with current prices, changes, and volumes.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Maximum number of stocks to return (default: all)"}
+            },
+            "required": [],
+        },
+    )
     def _get_all_stocks(self, tool_input: Dict = None) -> str:
         """Get all stocks data"""
         tool_input = tool_input or {}
@@ -552,6 +364,17 @@ class TradingTools:
             "stocks": stocks
         }, indent=2)
     
+    @tool(
+        name="get_company_profile",
+        description="Get detailed company profile including description, sector, IPO date, number of shares, market cap, and website. Useful for fundamental analysis and understanding what a company does.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol (e.g., 'ADH', 'BCP', 'IAM')"}
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_company_profile(self, tool_input: Dict) -> str:
         """Get company profile data"""
         symbol = tool_input['symbol']
@@ -577,6 +400,17 @@ class TradingTools:
             "website": profile.get('SiteInternet', '').strip()
         }, indent=2)
     
+    @tool(
+        name="get_shareholders",
+        description="Get shareholder structure showing major shareholders and their ownership percentages. Important for understanding ownership concentration and float.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol (e.g., 'ADH', 'BCP', 'IAM')"}
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_shareholders(self, tool_input: Dict) -> str:
         """Get shareholders data"""
         symbol = tool_input['symbol']
@@ -612,6 +446,17 @@ class TradingTools:
             "ownership_concentration": sum(h['percentage'] for h in major_holders)
         }, indent=2)
     
+    @tool(
+        name="get_financial_metrics",
+        description="Get key financial metrics and ratios including P/E ratio, dividend yield, P/B ratio, EPS, DPS, margins, revenue, and net income for the last 2 years. Essential for fundamental valuation.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol (e.g., 'ADH', 'BCP', 'IAM')"}
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_financial_metrics(self, tool_input: Dict) -> str:
         """Get financial metrics data"""
         symbol = tool_input['symbol']
@@ -670,6 +515,18 @@ class TradingTools:
             "raw_data": [{"label": m.get('Libelle'), **{k: m.get(k) for k in m.keys() if k.isdigit()}} for m in metrics]
         }, indent=2)
     
+    @tool(
+        name="get_recent_trades",
+        description="Get the most recent executed trades for a stock showing time, price, quantity and trade direction. Essential for understanding real-time price action and detecting large trades.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol (e.g., 'BCP', 'IAM', 'ATW')"},
+                "limit": {"type": "integer", "description": "Maximum number of trades to return (default 20)"},
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_recent_trades(self, tool_input: Dict) -> str:
         """Get recent trades for a stock"""
         symbol = tool_input['symbol']
@@ -730,6 +587,21 @@ class TradingTools:
             }
         }, indent=2)
     
+    @tool(
+        name="screen_stocks",
+        description="Screen stocks based on criteria like minimum volume, price change, and sector. Useful for finding trading opportunities and filtering the universe of stocks.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "min_volume_mad": {"type": "number", "description": "Minimum trading volume in MAD (millions)"},
+                "min_change_pct": {"type": "number", "description": "Minimum price change percentage"},
+                "max_change_pct": {"type": "number", "description": "Maximum price change percentage"},
+                "direction": {"type": "string", "description": "Filter by direction: 'up', 'down', or 'all'", "enum": ["up", "down", "all"]},
+                "limit": {"type": "integer", "description": "Maximum number of results (default 10)"},
+            },
+            "required": [],
+        },
+    )
     def _screen_stocks(self, tool_input: Dict = None) -> str:
         """Screen stocks based on criteria"""
         tool_input = tool_input or {}
@@ -791,6 +663,18 @@ class TradingTools:
             "stocks": filtered[:limit]
         }, indent=2)
     
+    @tool(
+        name="get_volatility_analysis",
+        description="Get volatility metrics including Average True Range (ATR), daily range analysis, and volatility classification. Critical for position sizing and stop-loss placement.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"},
+                "period": {"type": "integer", "description": "ATR period in days (default 14)"},
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_volatility_analysis(self, tool_input: Dict) -> str:
         """Analyze volatility for a stock"""
         symbol = tool_input['symbol']
@@ -859,6 +743,18 @@ class TradingTools:
             "suggested_position_sizing_note": f"With {volatility_class} volatility, consider {'smaller' if volatility_class == 'HIGH' else 'larger' if volatility_class == 'LOW' else 'standard'} position sizes"
         }, indent=2)
     
+    @tool(
+        name="get_support_resistance",
+        description="Calculate key support and resistance levels based on swing highs/lows, period highs/lows, and price action analysis. Essential for identifying entry/exit points.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"},
+                "lookback": {"type": "integer", "description": "Number of days to analyze (default 30)"},
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_support_resistance(self, tool_input: Dict) -> str:
         """Calculate support and resistance levels"""
         symbol = tool_input['symbol']
@@ -913,6 +809,11 @@ class TradingTools:
             }
         }, indent=2)
     
+    @tool(
+        name="get_market_breadth",
+        description="Get market breadth indicators showing overall market health: advance/decline ratio, new highs/lows, percent above moving averages. Use for market timing decisions.",
+        parameters={"type": "object", "properties": {}, "required": []},
+    )
     def _get_market_breadth(self, tool_input: Dict = None) -> str:
         """Get market breadth indicators"""
         all_tickers = self.provider.get_all_tickers()
@@ -991,6 +892,21 @@ class TradingTools:
             "interpretation": f"{'Broad buying' if sentiment.endswith('BULLISH') else 'Broad selling' if sentiment.endswith('BEARISH') else 'Mixed'} pressure with {advances} stocks up vs {declines} down"
         }, indent=2)
     
+    @tool(
+        name="compare_stocks",
+        description="Compare multiple stocks side by side on key metrics including price performance, volume, volatility, and technicals. Useful for relative value analysis and pair trading.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of stock symbols to compare (2-5 stocks)",
+                }
+            },
+            "required": ["symbols"],
+        },
+    )
     def _compare_stocks(self, tool_input: Dict) -> str:
         """Compare multiple stocks"""
         symbols = tool_input.get('symbols', [])
@@ -1056,6 +972,17 @@ class TradingTools:
             }
         }, indent=2)
     
+    @tool(
+        name="get_intraday_momentum",
+        description="Analyze intraday momentum by examining price relative to open, high, low, VWAP proximity, and buying/selling pressure. Key for timing entries during the trading day.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"}
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_intraday_momentum(self, tool_input: Dict) -> str:
         """Analyze intraday momentum"""
         symbol = tool_input['symbol']
@@ -1181,6 +1108,32 @@ class TradingTools:
             return None
         return date.fromisoformat(raw[:10])
 
+    @tool(
+        name="get_corporate_actions",
+        description=(
+            "Return dividend, split, capital-increase, and rights-issue events "
+            "for a stock with full provenance (source, confidence, status). "
+            "Supports point-in-time queries via `as_of` so backtests never see "
+            "future-back-dated data. Always check the `warnings` and `coverage` "
+            "fields before acting on the data."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"},
+                "from_date": {"type": "string", "description": "ISO date; include events with ex_date >= from_date"},
+                "to_date": {"type": "string", "description": "ISO date; include events with ex_date <= to_date"},
+                "as_of": {"type": "string", "description": "ISO datetime; only consider observations seen on/before this instant (point-in-time)"},
+                "event_types": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["dividend", "split", "capital_increase", "rights_issue"]},
+                    "description": "Filter to these event types; omit for all",
+                },
+                "include_pending": {"type": "boolean", "description": "Include pending_review and disputed events (default false)"},
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_corporate_actions(self, tool_input: Dict) -> str:
         err = self._require_ca_service()
         if err:
@@ -1225,6 +1178,26 @@ class TradingTools:
             indent=2,
         )
 
+    @tool(
+        name="get_adjusted_price_history",
+        description=(
+            "Return OHLCV history with prices and volumes back-adjusted for "
+            "dividends and splits. Use this for ALL technical indicator inputs — "
+            "RSI/MACD on unadjusted series across an ex-dividend date are false "
+            "signals. Response includes the adjustment factors applied and any "
+            "events that were skipped (missing data, etc.)."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Stock symbol"},
+                "days": {"type": "integer", "description": "Number of recent days to return (default 90)"},
+                "as_of": {"type": "string", "description": "ISO datetime; apply only adjustments known on/before this instant"},
+                "include_pending": {"type": "boolean", "description": "Apply pending_review events too (default false)"},
+            },
+            "required": ["symbol"],
+        },
+    )
     def _get_adjusted_price_history(self, tool_input: Dict) -> str:
         err = self._require_ca_service()
         if err:
