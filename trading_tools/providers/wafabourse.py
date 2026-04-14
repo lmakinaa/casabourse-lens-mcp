@@ -9,12 +9,14 @@ above this layer should import requests or reference WafaBourse.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 import requests
 
 from ..config import DEFAULT_HEADERS, REQUEST_TIMEOUT, WAFABOURSE_API
 from .base import DataProvider
+from .yahoo import YahooMarketDataClient, latest_and_change
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class WafaBourseProvider(DataProvider):
     def __init__(self) -> None:
         self.session = requests.Session()
         self.headers = DEFAULT_HEADERS.copy()
+        self._yahoo = YahooMarketDataClient(self.session, REQUEST_TIMEOUT)
 
     def _request(
         self,
@@ -157,3 +160,62 @@ class WafaBourseProvider(DataProvider):
             ],
             action_type="PROCSELECT",
         )
+
+    def get_fx_rates(self) -> Optional[Dict[str, Any]]:
+        usd_points = self._yahoo.daily_close_points("USDMAD=X")
+        eur_points = self._yahoo.daily_close_points("EURMAD=X")
+
+        usd_spot, usd_change, usd_as_of = latest_and_change(usd_points, 20)
+        eur_spot, eur_change, eur_as_of = latest_and_change(eur_points, 20)
+
+        warnings: List[str] = []
+        if usd_spot is None:
+            warnings.append("missing USD/MAD spot")
+        if eur_spot is None:
+            warnings.append("missing EUR/MAD spot")
+        if usd_change is None:
+            warnings.append("missing USD/MAD lookback")
+        if eur_change is None:
+            warnings.append("missing EUR/MAD lookback")
+
+        return {
+            "usd_mad_spot": usd_spot,
+            "eur_mad_spot": eur_spot,
+            "usd_mad_20d_change_pct": usd_change,
+            "eur_mad_20d_change_pct": eur_change,
+            "as_of": max([d for d in [usd_as_of, eur_as_of] if d], default=None),
+            "warnings": warnings,
+            "source": "yahoo_finance",
+        }
+
+    def get_commodity_prices(self) -> Optional[Dict[str, Any]]:
+        brent_series = self._yahoo.daily_close_points("BZ=F")
+        gold_series = self._yahoo.daily_close_points("GC=F")
+
+        brent, brent_chg, brent_as_of = latest_and_change(brent_series, 30)
+        gold, gold_chg, gold_as_of = latest_and_change(gold_series, 30)
+        phosphate = None
+        phosphate_chg = None
+        phosphate_as_of = None
+
+        warnings: List[str] = []
+        if brent is None:
+            warnings.append("missing Brent series")
+        if gold is None:
+            warnings.append("missing Gold series")
+        warnings.append("missing phosphate rock direct Yahoo symbol; field left null")
+
+        return {
+            "brent_usd_per_bbl": brent,
+            "brent_30d_change_pct": brent_chg,
+            "gold_usd_per_oz": gold,
+            "gold_30d_change_pct": gold_chg,
+            "phosphate_usd_per_mt": phosphate,
+            "phosphate_30d_change_pct": phosphate_chg,
+            "as_of": max(
+                [d for d in [brent_as_of, gold_as_of, phosphate_as_of] if d],
+                default=None,
+            ),
+            "warnings": warnings,
+            "source": "yahoo_finance",
+        }

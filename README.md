@@ -20,7 +20,7 @@ Connect this server to Claude Desktop and you can ask things like:
 >
 > "Find me stocks that are up today with high volume"
 
-Claude gets **19 tools** for market data, technicals, fundamentals, and corporate-actions-aware analysis.
+Claude gets **21 tools** for market data, technicals, fundamentals, macro/cross-asset context, and corporate-actions-aware analysis.
 
 ## Tools
 
@@ -30,6 +30,7 @@ Claude gets **19 tools** for market data, technicals, fundamentals, and corporat
 | **Stock Analysis** | `get_stock_snapshot` `get_technical_analysis` `get_order_book` `get_price_history` `get_recent_trades` |
 | **Trading** | `analyze_volume_profile` `get_volatility_analysis` `get_support_resistance` `get_intraday_momentum` `compare_stocks` |
 | **Fundamentals** | `get_company_profile` `get_shareholders` `get_financial_metrics` |
+| **Macro / Cross-asset** | `get_fx_rates` `get_commodity_prices` |
 | **Corporate Actions** | `get_corporate_actions` `get_adjusted_price_history` |
 
 ## Setup

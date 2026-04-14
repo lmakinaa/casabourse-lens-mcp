@@ -33,6 +33,8 @@ class DataClass(str, Enum):
     COMPANY_PROFILE = "company_profile"
     SHAREHOLDERS = "shareholders"
     FINANCIAL_METRICS = "financial_metrics"
+    FX_RATES = "fx_rates"
+    COMMODITY_PRICES = "commodity_prices"
 
 
 class ProviderError(RuntimeError):
@@ -82,3 +84,9 @@ class DataProvider(ABC):
 
     @abstractmethod
     def get_financial_metrics(self, symbol: str) -> Optional[List[Dict[str, Any]]]: ...
+
+    @abstractmethod
+    def get_fx_rates(self) -> Optional[Dict[str, Any]]: ...
+
+    @abstractmethod
+    def get_commodity_prices(self) -> Optional[Dict[str, Any]]: ...

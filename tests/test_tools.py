@@ -251,6 +251,30 @@ def test_intraday_momentum(tools, parse_json):
     assert "order_book_imbalance_pct" in out["pressure_analysis"]
 
 
+def test_fx_rates(tools, parse_json):
+    out = parse_json(tools.execute_tool("get_fx_rates", {}))
+    assert out["source"] == "fake_fx"
+    assert out["as_of"] == "2026-04-15"
+    assert out["usd_mad_spot"] == 9.98
+    assert out["eur_mad_spot"] == 10.82
+    assert out["usd_mad_20d_change_pct"] == 0.45
+    assert out["eur_mad_20d_change_pct"] == -0.22
+    assert out["warnings"] == []
+
+
+def test_commodity_prices(tools, parse_json):
+    out = parse_json(tools.execute_tool("get_commodity_prices", {}))
+    assert out["source"] == "fake_commodities"
+    assert out["as_of"] == "2026-04-15"
+    assert out["brent_usd_per_bbl"] == 84.2
+    assert out["gold_usd_per_oz"] == 2310.0
+    assert out["phosphate_usd_per_mt"] == 152.0
+    assert out["brent_30d_change_pct"] == 3.2
+    assert out["gold_30d_change_pct"] == 1.1
+    assert out["phosphate_30d_change_pct"] == 0.0
+    assert out["warnings"] == []
+
+
 # --------------------------------------------------------------------- #
 # Error paths — upstream returning None must surface as a clean error
 # string, never an uncaught exception.
