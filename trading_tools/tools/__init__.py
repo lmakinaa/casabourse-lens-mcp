@@ -42,6 +42,7 @@ from . import compare_stocks  # noqa: F401
 from . import intraday_momentum  # noqa: F401
 from . import corporate_events  # noqa: F401
 from . import adjusted_price_history  # noqa: F401
+from . import macro_snapshot  # noqa: F401
 
 
 class TradingTools:

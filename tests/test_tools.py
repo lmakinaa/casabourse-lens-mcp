@@ -251,6 +251,19 @@ def test_intraday_momentum(tools, parse_json):
     assert "order_book_imbalance_pct" in out["pressure_analysis"]
 
 
+def test_macro_snapshot(tools, parse_json):
+    out = parse_json(tools.execute_tool("get_macro_snapshot", {}))
+    assert out["source"] == "fake_macro"
+    assert out["as_of"] == "2026-04-14"
+    assert out["policy_rate_pct"] == 3.0
+    assert out["t_bill_13w_pct"] == 2.85
+    assert out["t_bill_52w_pct"] == 3.1
+    assert out["cpi_yoy_pct"] == 1.7
+    assert out["masi_dividend_yield_pct"] == 3.9
+    assert out["equity_risk_premium_pct"] == 0.8
+    assert out["warnings"] == []
+
+
 # --------------------------------------------------------------------- #
 # Error paths — upstream returning None must surface as a clean error
 # string, never an uncaught exception.

@@ -176,6 +176,20 @@ def financial_metrics() -> List[Dict[str, Any]]:
     ]
 
 
+def macro_snapshot() -> Dict[str, Any]:
+    return {
+        "policy_rate_pct": 3.0,
+        "t_bill_13w_pct": 2.85,
+        "t_bill_52w_pct": 3.1,
+        "cpi_yoy_pct": 1.7,
+        "masi_dividend_yield_pct": 3.9,
+        "equity_risk_premium_pct": 0.8,
+        "as_of": "2026-04-14",
+        "warnings": [],
+        "source": "fake_macro",
+    }
+
+
 class FakeUpstream:
     """
     Duck-typed upstream client. Satisfies:
@@ -239,3 +253,7 @@ class FakeUpstream:
     ) -> Optional[List[Dict[str, Any]]]:
         self._tick(f"financial_metrics:{symbol}")
         return financial_metrics()
+
+    def get_macro_snapshot(self) -> Optional[Dict[str, Any]]:
+        self._tick("macro_snapshot")
+        return macro_snapshot()

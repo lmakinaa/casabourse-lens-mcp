@@ -157,3 +157,23 @@ class WafaBourseProvider(DataProvider):
             ],
             action_type="PROCSELECT",
         )
+
+    def get_macro_snapshot(self) -> Optional[Dict[str, Any]]:
+        """
+        Macro series are not exposed by WafaBourse endpoints used by this provider.
+
+        Return a structured placeholder so upper layers can surface a clean
+        warning instead of hard-failing while dedicated BAM/HCP/market-data
+        sources are wired.
+        """
+        return {
+            "policy_rate_pct": None,
+            "t_bill_13w_pct": None,
+            "t_bill_52w_pct": None,
+            "cpi_yoy_pct": None,
+            "masi_dividend_yield_pct": None,
+            "equity_risk_premium_pct": None,
+            "as_of": None,
+            "warnings": ["macro snapshot source not configured for wafabourse provider"],
+            "source": "wafabourse",
+        }

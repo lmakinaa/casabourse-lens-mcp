@@ -33,6 +33,7 @@ class DataClass(str, Enum):
     COMPANY_PROFILE = "company_profile"
     SHAREHOLDERS = "shareholders"
     FINANCIAL_METRICS = "financial_metrics"
+    MACRO_SNAPSHOT = "macro_snapshot"
 
 
 class ProviderError(RuntimeError):
@@ -82,3 +83,6 @@ class DataProvider(ABC):
 
     @abstractmethod
     def get_financial_metrics(self, symbol: str) -> Optional[List[Dict[str, Any]]]: ...
+
+    @abstractmethod
+    def get_macro_snapshot(self) -> Optional[Dict[str, Any]]: ...

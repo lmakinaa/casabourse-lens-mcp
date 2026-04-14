@@ -51,6 +51,7 @@ class TTLPolicy:
         DataClass.COMPANY_PROFILE: 86_400,
         DataClass.SHAREHOLDERS: 86_400,
         DataClass.FINANCIAL_METRICS: 86_400,
+        DataClass.MACRO_SNAPSHOT: 21_600,
     }
 
     def __init__(self, overrides: Optional[Dict[DataClass, int]] = None) -> None:
@@ -296,4 +297,11 @@ class CachingDataProvider(DataProvider):
             DataClass.FINANCIAL_METRICS,
             symbol,
             lambda: self._upstream.get_financial_metrics(symbol),
+        )
+
+    def get_macro_snapshot(self) -> Optional[Dict[str, Any]]:
+        return self._fetch(
+            DataClass.MACRO_SNAPSHOT,
+            "_",
+            self._upstream.get_macro_snapshot,
         )

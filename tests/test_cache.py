@@ -94,3 +94,11 @@ def test_provider_name_decoration(cache_path):
     up = FakeUpstream()
     c = CachingDataProvider(up, cache_path=cache_path)
     assert c.name == "cached(fake)"
+
+
+def test_macro_snapshot_is_cached(cache_path):
+    up = FakeUpstream()
+    c = CachingDataProvider(up, cache_path=cache_path)
+    c.get_macro_snapshot()
+    c.get_macro_snapshot()
+    assert up.calls["macro_snapshot"] == 1
