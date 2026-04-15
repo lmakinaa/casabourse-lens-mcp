@@ -59,11 +59,11 @@ Build in this sequence for maximum recommendation-quality gain per unit of work:
 4. ~~**#5** (macro snapshot), **#6, #15** (FX, commodities)~~ ✅ completed.
 5. ~~**#12, #19, #20** (orderflow imbalance, correlation, beta)~~ ✅ completed.
 6. ~~**#13 + #14** (news + sentiment) — the thing the tape doesn't show.~~ ✅ **Phase 1 shipped on `feat/news-sentiment`**
-7. **Finish #13 source coverage** (L'Économiste + Finances News adapters/feeds).
 8. **#3, #4** (earnings calendar, filings) — event risk guard.
 9. **#8, #9** (financial statements, peers) — deep fundamentals.
 10. **#18** (backtest) — calibration layer, requires everything above.
 11. **#10, #11, #17** (flows, blocks, sovereign spread) — the last mile.
+12. **Finish #13 source coverage** (L'Économiste + Finances News adapters/feeds).
 
 The two infra items (#21, #22) are not optional — skip them and the codebase will need rewriting by tool #5 anyway. Pay the cost once, upfront.
 
