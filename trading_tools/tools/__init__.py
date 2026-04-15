@@ -48,6 +48,7 @@ from . import commodity_prices  # noqa: F401
 from . import news  # noqa: F401
 from . import news_sentiment  # noqa: F401
 from . import earnings_calendar  # noqa: F401
+from . import regulatory_filings  # noqa: F401
 from . import orderflow_imbalance  # noqa: F401
 from . import correlation_matrix  # noqa: F401
 from . import beta  # noqa: F401

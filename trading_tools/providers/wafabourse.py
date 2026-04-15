@@ -15,7 +15,11 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from ..config import DEFAULT_HEADERS, REQUEST_TIMEOUT, WAFABOURSE_API
-from .ammc_calendar import fetch_earnings_calendar, load_issuer_map
+from .ammc_calendar import (
+    fetch_earnings_calendar,
+    fetch_regulatory_filings,
+    load_issuer_map,
+)
 from .base import DataProvider
 from .news_rss import build_sentiment_snapshot, fetch_news_articles
 from .yahoo import YahooMarketDataClient, latest_and_change
@@ -280,5 +284,19 @@ class WafaBourseProvider(DataProvider):
         return fetch_earnings_calendar(
             symbol,
             lookahead_days=lookahead_days,
+            issuer_map=self._issuer_map,
+        )
+
+    def get_regulatory_filings(
+        self,
+        symbol: str,
+        *,
+        lookback_days: int = 365,
+        limit: int = 20,
+    ) -> Optional[Dict[str, Any]]:
+        return fetch_regulatory_filings(
+            symbol,
+            lookback_days=lookback_days,
+            limit=limit,
             issuer_map=self._issuer_map,
         )

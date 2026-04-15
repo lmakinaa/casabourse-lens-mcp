@@ -57,6 +57,7 @@ class TTLPolicy:
         DataClass.NEWS: 900,
         DataClass.NEWS_SENTIMENT: 1800,
         DataClass.EARNINGS_CALENDAR: 3600,
+        DataClass.REGULATORY_FILINGS: 3600,
     }
 
     def __init__(self, overrides: Optional[Dict[DataClass, int]] = None) -> None:
@@ -360,4 +361,21 @@ class CachingDataProvider(DataProvider):
             DataClass.EARNINGS_CALENDAR,
             f"{symbol}:{lookahead_days}",
             lambda: self._upstream.get_earnings_calendar(symbol, lookahead_days=lookahead_days),
+        )
+
+    def get_regulatory_filings(
+        self,
+        symbol: str,
+        *,
+        lookback_days: int = 365,
+        limit: int = 20,
+    ) -> Optional[Dict[str, Any]]:
+        return self._fetch(
+            DataClass.REGULATORY_FILINGS,
+            f"{symbol}:{lookback_days}:{limit}",
+            lambda: self._upstream.get_regulatory_filings(
+                symbol,
+                lookback_days=lookback_days,
+                limit=limit,
+            ),
         )

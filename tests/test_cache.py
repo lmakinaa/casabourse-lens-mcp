@@ -142,3 +142,11 @@ def test_earnings_calendar_is_cached(cache_path):
     c.get_earnings_calendar("ATL", lookahead_days=365)
     c.get_earnings_calendar("ATL", lookahead_days=365)
     assert up.calls["earnings_calendar:ATL:365"] == 1
+
+
+def test_regulatory_filings_are_cached(cache_path):
+    up = FakeUpstream()
+    c = CachingDataProvider(up, cache_path=cache_path)
+    c.get_regulatory_filings("ATL", lookback_days=365, limit=20)
+    c.get_regulatory_filings("ATL", lookback_days=365, limit=20)
+    assert up.calls["regulatory_filings:ATL:365:20"] == 1

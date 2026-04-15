@@ -328,6 +328,66 @@ def earnings_calendar(symbol: str, lookahead_days: int = 365) -> Dict[str, Any]:
     }
 
 
+def regulatory_filings(
+    symbol: str,
+    lookback_days: int = 365,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    symbol = symbol.upper()
+    filings = [
+        {
+            "symbol": symbol,
+            "issuer_name": "ATLANTASANAD",
+            "filing_type": "tender_offer",
+            "title": "Projet d'offre publique de retrait (OPR)",
+            "published_at": "2026-04-10T09:15:00+00:00",
+            "published_date": "2026-04-10",
+            "source_page": "issuer_documents",
+            "source_url": "https://www.ammc.ma/fr/espace-emetteurs/documents-information",
+            "pdf_url": "https://www.ammc.ma/sites/default/files/OPR_ATL_2026.pdf",
+            "detail_url": None,
+            "warnings": [],
+        },
+        {
+            "symbol": symbol,
+            "issuer_name": "ATLANTASANAD",
+            "filing_type": "material_disclosure",
+            "title": "Déclaration de franchissement de seuil de participation",
+            "published_at": "2026-04-07T11:00:00+00:00",
+            "published_date": "2026-04-07",
+            "source_page": "ammc_news",
+            "source_url": "https://www.ammc.ma/fr/actualites",
+            "pdf_url": "https://www.ammc.ma/sites/default/files/franchissement_seuil_atl.pdf",
+            "detail_url": "/fr/actualites/franchissement-seuil-atl",
+            "warnings": [],
+        },
+    ]
+    filings = filings[: max(1, min(limit, len(filings)))]
+    return {
+        "symbol": symbol,
+        "as_of": "2026-04-15T12:30:00+00:00",
+        "source": "ammc_html",
+        "lookback_days": lookback_days,
+        "filing_count": len(filings),
+        "latest_filing_date": filings[0]["published_date"] if filings else None,
+        "coverage": {
+            "pages_checked": [
+                "ammc_news",
+                "issuer_press_releases",
+                "issuer_documents",
+            ],
+            "pages_retrieved": {
+                "ammc_news": 1,
+                "issuer_press_releases": 1,
+                "issuer_documents": 1,
+            },
+            "matched_items": len(filings),
+        },
+        "warnings": [],
+        "filings": filings,
+    }
+
+
 class FakeUpstream:
     """
     Duck-typed upstream client. Satisfies:
@@ -435,3 +495,13 @@ class FakeUpstream:
     ) -> Optional[Dict[str, Any]]:
         self._tick(f"earnings_calendar:{symbol}:{lookahead_days}")
         return earnings_calendar(symbol, lookahead_days)
+
+    def get_regulatory_filings(
+        self,
+        symbol: str,
+        *,
+        lookback_days: int = 365,
+        limit: int = 20,
+    ) -> Optional[Dict[str, Any]]:
+        self._tick(f"regulatory_filings:{symbol}:{lookback_days}:{limit}")
+        return regulatory_filings(symbol, lookback_days, limit)

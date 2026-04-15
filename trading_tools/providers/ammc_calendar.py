@@ -32,6 +32,12 @@ _AMMC_PAGES: tuple[tuple[str, str], ...] = (
     ("issuer_documents", "https://www.ammc.ma/fr/espace-emetteurs/documents-information"),
 )
 
+_AMMC_REGULATORY_PAGES: tuple[tuple[str, str], ...] = (
+    ("ammc_news", "https://www.ammc.ma/fr/actualites"),
+    ("issuer_press_releases", "https://www.ammc.ma/fr/communiques-presse-emetteurs"),
+    ("issuer_documents", "https://www.ammc.ma/fr/espace-emetteurs/documents-information"),
+)
+
 _NAME_RE = re.compile(
     r"^(?P<issuer>.+?)\s*(?:[-–—]\s+|\s+–\s+|\s+-\s+)(?P<title>.+?)\s*$"
 )
@@ -68,6 +74,30 @@ _MONTHS = {
 }
 
 _DEFAULT_MAPPING_PATH = Path(__file__).resolve().parent.parent.parent / "ingestion" / "mappings" / "issuer_symbols.json"
+
+_TENDER_OFFER_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bOPA\b", re.I),
+    re.compile(r"\bOPR\b", re.I),
+    re.compile(r"\bOPE\b", re.I),
+    re.compile(r"\boffre\s+publique\b", re.I),
+)
+
+_PROFIT_WARNING_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bprofit\s*warning\b", re.I),
+    re.compile(r"\bavertissement\b", re.I),
+    re.compile(r"\balerte\b", re.I),
+    re.compile(r"\bmise\s+en\s+garde\b", re.I),
+    re.compile(r"\bwarning\b", re.I),
+)
+
+_MATERIAL_DISCLOSURE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bfranchissement\s+de\s+seuil\b", re.I),
+    re.compile(r"\bd[ée]claration\s+de\s+franchissement\b", re.I),
+    re.compile(r"\bd[ée]claration\s+d[’']intention\b", re.I),
+    re.compile(r"\bvisa\b", re.I),
+    re.compile(r"\bnote\s+d[’']information\b", re.I),
+    re.compile(r"\bcommuniqu[ée]\s+important\b", re.I),
+)
 
 
 @dataclass(frozen=True)
@@ -264,6 +294,30 @@ def _extract_symbol(issuer_raw: str, issuer_map: Dict[str, str]) -> Optional[str
     return None
 
 
+def _extract_symbol_from_text(text: str, issuer_map: Dict[str, str]) -> Optional[str]:
+    normalized = _normalize(text)
+    if not normalized:
+        return None
+    for issuer_name, symbol in issuer_map.items():
+        if issuer_name in normalized:
+            return symbol
+    return None
+
+
+def _classify_regulatory_filing(title: str) -> Optional[str]:
+    clean = _clean_text(title)
+    for pattern in _TENDER_OFFER_PATTERNS:
+        if pattern.search(clean):
+            return "tender_offer"
+    for pattern in _PROFIT_WARNING_PATTERNS:
+        if pattern.search(clean):
+            return "profit_warning"
+    for pattern in _MATERIAL_DISCLOSURE_PATTERNS:
+        if pattern.search(clean):
+            return "material_disclosure"
+    return None
+
+
 def fetch_earnings_calendar(
     symbol: str,
     *,
@@ -376,4 +430,116 @@ def fetch_earnings_calendar(
         },
         "warnings": warnings,
         "events": [item.to_dict() for item in next_items],
+    }
+
+
+def fetch_regulatory_filings(
+    symbol: str,
+    *,
+    lookback_days: int = 365,
+    limit: int = 20,
+    timeout: float = 20.0,
+    issuer_map: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """
+    Pull AMMC pages and return regulatory filing notices for a symbol.
+
+    Scope targets event-risk categories:
+      - tender_offer (OPA/OPR/OPE / offre publique)
+      - profit_warning
+      - material_disclosure (franchissement, visa, note d'information...)
+    """
+    symbol_u = symbol.strip().upper()
+    lookback_days = max(1, min(int(lookback_days), 730))
+    limit = max(1, min(int(limit), 100))
+    issuer_map = issuer_map or load_issuer_map()
+
+    warnings: list[str] = []
+    today = date.today()
+    oldest = today.fromordinal(today.toordinal() - lookback_days)
+
+    source_counts: Dict[str, int] = {}
+    filings: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, Optional[str]]] = set()
+
+    ssl_context = _build_ssl_context(_default_extra_ca_files())
+    with httpx.Client(
+        verify=ssl_context,
+        follow_redirects=True,
+        timeout=timeout,
+        headers={
+            "User-Agent": "casabourse-lens/0.1 (+https://github.com/ijaija/casabourse-lens)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+    ) as client:
+        for page_key, url in _AMMC_REGULATORY_PAGES:
+            try:
+                response = client.get(url)
+                response.raise_for_status()
+            except Exception as exc:
+                warnings.append(f"source_unavailable:{page_key}")
+                log.warning(
+                    "ammc.fetch_failed",
+                    extra={"page": page_key, "url": url, "error": str(exc)},
+                )
+                continue
+
+            source_counts[page_key] = source_counts.get(page_key, 0) + 1
+            for raw_item in _parse_html_page(page_key, response.text, url):
+                filing_type = _classify_regulatory_filing(raw_item["title"])
+                if filing_type is None:
+                    continue
+
+                item_symbol = _extract_symbol(raw_item["issuer_raw"], issuer_map)
+                if item_symbol is None:
+                    item_symbol = _extract_symbol_from_text(raw_item["title"], issuer_map)
+                if item_symbol is None:
+                    warnings.append(f"unmapped_issuer:{raw_item['issuer_raw']}")
+                    continue
+                if item_symbol != symbol_u:
+                    continue
+
+                published_at = _parse_published_at(raw_item["published_at"])
+                published_date = published_at.date()
+                if published_date < oldest:
+                    continue
+
+                dedupe_key = (raw_item["title"], published_at.isoformat(), raw_item["pdf_url"])
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+
+                filings.append(
+                    {
+                        "symbol": item_symbol,
+                        "issuer_name": raw_item["issuer_raw"],
+                        "filing_type": filing_type,
+                        "title": raw_item["title"],
+                        "published_at": published_at.isoformat(),
+                        "published_date": published_date.isoformat(),
+                        "source_page": raw_item["page_key"],
+                        "source_url": raw_item["source_url"],
+                        "pdf_url": raw_item["pdf_url"],
+                        "detail_url": raw_item["detail_url"],
+                        "warnings": [],
+                    }
+                )
+
+    filings.sort(key=lambda row: row["published_at"], reverse=True)
+    filings = filings[:limit]
+
+    return {
+        "symbol": symbol_u,
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "source": "ammc_html",
+        "lookback_days": lookback_days,
+        "filing_count": len(filings),
+        "latest_filing_date": filings[0]["published_date"] if filings else None,
+        "coverage": {
+            "pages_checked": [page for page, _ in _AMMC_REGULATORY_PAGES],
+            "pages_retrieved": source_counts,
+            "matched_items": len(filings),
+        },
+        "warnings": warnings,
+        "filings": filings,
     }

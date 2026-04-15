@@ -30,6 +30,22 @@ SAMPLE_DOCS = """
 </html>
 """
 
+SAMPLE_REGULATORY = """
+<html>
+    <body>
+        <time datetime="2026-04-10T09:15:00Z">10/04/2026</time>
+        <span class="field-content">AtlantaSanad - Projet d'offre publique de retrait (OPR)</span>
+        <a href="/sites/default/files/OPR_ATL_2026.pdf">OPR_ATL_2026.pdf</a>
+        <time datetime="2026-04-08T12:00:00Z">08/04/2026</time>
+        <span class="field-content">AtlantaSanad - Avertissement sur résultats annuels 2026</span>
+        <a href="/sites/default/files/Warning_ATL_2026.pdf">Warning_ATL_2026.pdf</a>
+        <time datetime="2026-04-07T11:00:00Z">07/04/2026</time>
+        <span class="field-content">AtlantaSanad - Déclaration de franchissement de seuil de participation</span>
+        <a href="/sites/default/files/Franchissement_ATL_2026.pdf">Franchissement_ATL_2026.pdf</a>
+    </body>
+</html>
+"""
+
 
 @dataclass
 class _Response:
@@ -50,6 +66,8 @@ class _Client:
         return None
 
     def get(self, url: str):
+        if "actualites" in url:
+            return _Response(SAMPLE_REGULATORY)
         if "communiques-presse-emetteurs" in url:
             return _Response(SAMPLE_PRESS_RELEASES)
         if "documents-information" in url:
@@ -92,3 +110,36 @@ def test_parse_html_page_extracts_items():
 def test_parse_date_fragment_supports_french_months():
     assert ammc_calendar._parse_date_fragment("du 15 mai 2026") == ammc_calendar.date(2026, 5, 15)
     assert ammc_calendar._parse_date_fragment("15/05/2026") == ammc_calendar.date(2026, 5, 15)
+
+
+def test_classify_regulatory_filing_categories():
+    assert ammc_calendar._classify_regulatory_filing("Projet d'offre publique de retrait (OPR)") == "tender_offer"
+    assert ammc_calendar._classify_regulatory_filing("Avertissement sur résultats") == "profit_warning"
+    assert (
+        ammc_calendar._classify_regulatory_filing("Déclaration de franchissement de seuil de participation")
+        == "material_disclosure"
+    )
+
+
+def test_fetch_regulatory_filings_extracts_event_risk_items(monkeypatch):
+    issuer_map = {
+        "ATLANTASANAD": "ATL",
+    }
+    monkeypatch.setattr(ammc_calendar.httpx, "Client", _Client)
+
+    out = ammc_calendar.fetch_regulatory_filings(
+        "ATL",
+        lookback_days=365,
+        limit=10,
+        issuer_map=issuer_map,
+    )
+
+    assert out["symbol"] == "ATL"
+    assert out["source"] == "ammc_html"
+    assert out["filing_count"] >= 3
+    assert out["latest_filing_date"] == "2026-04-10"
+    assert {row["filing_type"] for row in out["filings"]} >= {
+        "tender_offer",
+        "profit_warning",
+        "material_disclosure",
+    }

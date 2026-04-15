@@ -39,6 +39,7 @@ class DataClass(str, Enum):
     NEWS = "news"
     NEWS_SENTIMENT = "news_sentiment"
     EARNINGS_CALENDAR = "earnings_calendar"
+    REGULATORY_FILINGS = "regulatory_filings"
 
 
 class ProviderError(RuntimeError):
@@ -121,4 +122,13 @@ class DataProvider(ABC):
         symbol: str,
         *,
         lookahead_days: int = 365,
+    ) -> Optional[Dict[str, Any]]: ...
+
+    @abstractmethod
+    def get_regulatory_filings(
+        self,
+        symbol: str,
+        *,
+        lookback_days: int = 365,
+        limit: int = 20,
     ) -> Optional[Dict[str, Any]]: ...

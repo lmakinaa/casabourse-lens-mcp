@@ -351,6 +351,22 @@ def test_earnings_calendar(tools, parse_json):
     assert len(out["events"]) == 2
 
 
+def test_regulatory_filings(tools, parse_json):
+    out = parse_json(
+        tools.execute_tool(
+            "get_regulatory_filings",
+            {"symbol": "ATL", "lookback_days": 365, "limit": 20},
+        )
+    )
+    assert out["symbol"] == "ATL"
+    assert out["source"] == "ammc_html"
+    assert out["filing_count"] == 2
+    assert out["latest_filing_date"] == "2026-04-10"
+    assert out["coverage"]["matched_items"] == 2
+    assert len(out["filings"]) == 2
+    assert out["filings"][0]["filing_type"] in {"tender_offer", "profit_warning", "material_disclosure"}
+
+
 # --------------------------------------------------------------------- #
 # Error paths — upstream returning None must surface as a clean error
 # string, never an uncaught exception.
