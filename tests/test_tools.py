@@ -340,6 +340,17 @@ def test_news_sentiment(tools, parse_json):
     assert out["warnings"] == []
 
 
+def test_earnings_calendar(tools, parse_json):
+    out = parse_json(tools.execute_tool("get_earnings_calendar", {"symbol": "ATL", "lookahead_days": 365}))
+    assert out["symbol"] == "ATL"
+    assert out["source"] == "ammc_html"
+    assert out["next_event_date"] == "2026-05-15"
+    assert out["next_event_kind"] == "meeting"
+    assert "AGO" in out["next_event_title"]
+    assert out["coverage"]["matched_items"] == 2
+    assert len(out["events"]) == 2
+
+
 # --------------------------------------------------------------------- #
 # Error paths — upstream returning None must surface as a clean error
 # string, never an uncaught exception.

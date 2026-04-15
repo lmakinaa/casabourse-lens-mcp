@@ -38,6 +38,7 @@ class DataClass(str, Enum):
     COMMODITY_PRICES = "commodity_prices"
     NEWS = "news"
     NEWS_SENTIMENT = "news_sentiment"
+    EARNINGS_CALENDAR = "earnings_calendar"
 
 
 class ProviderError(RuntimeError):
@@ -112,4 +113,12 @@ class DataProvider(ABC):
         symbol: str,
         *,
         window_days: int = 7,
+    ) -> Optional[Dict[str, Any]]: ...
+
+    @abstractmethod
+    def get_earnings_calendar(
+        self,
+        symbol: str,
+        *,
+        lookahead_days: int = 365,
     ) -> Optional[Dict[str, Any]]: ...

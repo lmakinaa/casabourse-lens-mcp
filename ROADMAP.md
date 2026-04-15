@@ -10,7 +10,7 @@ Tools to add next, ranked by impact on recommendation quality.
 |---|---|---|---|---|---|
 | 1 | `get_corporate_actions` ✅ **done** | Ex-dividend dates, dividend amounts, stock splits, capital increases per ticker. Backed by an event-log + reconciler store with per-field source precedence and point-in-time queries. | Data quality | Without this, every RSI/MACD across an ex-div date is a false signal. Non-negotiable. | 🟡 |
 | 2 | `get_adjusted_price_history` ✅ **done** | OHLCV back-adjusted for dividends & splits. Replaces raw history for indicator inputs. | Data quality | Technical indicators on unadjusted series are garbage. Depends on #1. | 🟡 |
-| 3 | `get_earnings_calendar` | Next earnings/publication date per ticker from AMMC filings. | Event risk | Stops the agent from recommending a trade 2 days before a binary event. | 🟡 |
+| 3 | `get_earnings_calendar` ✅ **done** | Next earnings/publication date per ticker from AMMC filings. | Event risk | Stops the agent from recommending a trade 2 days before a binary event. | 🟡 |
 | 4 | `get_regulatory_filings` | AMMC notices: tender offers (OPA/OPR/OPE), profit warnings, material disclosures. | Event risk | Catches market-moving news the tape hasn't priced yet. | 🟡 |
 | 5 | `get_macro_snapshot` ✅ **done** | BAM policy rate, 13w/52w T-bill yield, CPI YoY, equity risk premium vs. MASI dividend yield. | Macro | Moroccan equities (esp. banks ≈35% of MASI) are rate-sensitive. Context the ticker doesn't show. | 🟢 |
 | 6 | `get_fx_rates` ✅ **done** | EUR/MAD, USD/MAD spot + 20-day change. | Macro | Drives earnings for exporters (OCP, IAM international, tourism). | 🟢 |
@@ -49,6 +49,11 @@ Tools to add next, ranked by impact on recommendation quality.
 	- additional RSS probes completed for Aujourd'hui le Maroc, La Nouvelle Tribune, and Hespress, but they were excluded from the finance/economy set because their feeds are general-news heavy
 	- L'Économiste probe returned homepage HTML/redirects rather than a usable RSS feed; defer unless an API fallback is approved
 	- Finances News exposes sitemaps/HTML, not a usable RSS feed; keep it out of the RSS-first scope until a non-RSS adapter is approved
+- ✅ `get_earnings_calendar` is live (`#3`) with AMMC HTML extraction path:
+	- AMMC issuer pages scraped from communiqués, issuer documents, and financial-statement listings
+	- normalized output includes `next_event_date`, `next_event_kind`, coverage stats, and event list
+	- cache class + provider contract wired (`EARNINGS_CALENDAR`)
+	- tests added for parser extraction, tool contract, and cache behavior
 
 ## Suggested Build Order
 
@@ -61,7 +66,7 @@ Build in this sequence for maximum recommendation-quality gain per unit of work:
 4. ~~**#5** (macro snapshot), **#6, #15** (FX, commodities)~~ ✅ completed.
 5. ~~**#12, #19, #20** (orderflow imbalance, correlation, beta)~~ ✅ completed.
 6. ~~**#13 + #14** (news + sentiment) — the thing the tape doesn't show.~~ ✅ **Phase 1 shipped on `feat/news-sentiment`**
-7. **#3, #4** (earnings calendar, filings) — event risk guard.
+7. ~~**#3** (earnings calendar)~~ ✅ completed; **#4** (regulatory filings) remains next for event-risk guard.
 8. **#8, #9** (financial statements, peers) — deep fundamentals.
 9. **#18** (backtest) — calibration layer, requires everything above.
 10. **#10, #11, #17** (flows, blocks, sovereign spread) — the last mile.

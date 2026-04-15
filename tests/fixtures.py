@@ -271,6 +271,63 @@ def news_sentiment(symbol: str, window_days: int = 7) -> Dict[str, Any]:
     }
 
 
+def earnings_calendar(symbol: str, lookahead_days: int = 365) -> Dict[str, Any]:
+    symbol = symbol.upper()
+    return {
+        "symbol": symbol,
+        "as_of": "2026-04-15T12:00:00+00:00",
+        "source": "ammc_html",
+        "lookahead_days": lookahead_days,
+        "next_event_date": "2026-05-15",
+        "next_event_kind": "meeting",
+        "next_event_title": "Avis de convocation à l'AGO du 15 mai 2026",
+        "coverage": {
+            "pages_checked": [
+                "issuer_press_releases",
+                "issuer_documents",
+                "issuer_financial_statements",
+            ],
+            "pages_retrieved": {
+                "issuer_press_releases": 1,
+                "issuer_documents": 1,
+                "issuer_financial_statements": 1,
+            },
+            "matched_items": 2,
+        },
+        "warnings": [],
+        "events": [
+            {
+                "symbol": symbol,
+                "issuer_name": "ATLANTASANAD",
+                "event_kind": "meeting",
+                "title": "Avis de convocation à l'AGO du 15 mai 2026",
+                "event_date": "2026-05-15",
+                "published_at": "2026-04-15T10:37:26+00:00",
+                "source_page": "issuer_press_releases",
+                "source_url": "https://www.ammc.ma/fr/communiques-presse-emetteurs",
+                "pdf_url": "https://www.ammc.ma/sites/default/files/Avis_AtlantaSanad_AGO_19_05_26.pdf",
+                "detail_url": "/fr/actualites/lammc-met-sur-son-site-internet-les-publications-realisees-par-les-emetteurs-en-date-973",
+                "date_source": "title",
+                "warnings": [],
+            },
+            {
+                "symbol": symbol,
+                "issuer_name": "IMMORENTE INVEST",
+                "event_kind": "publication",
+                "title": "CP relatif au paiement des 1er et 2e rendements trimestriels de l'année 2026",
+                "event_date": "2026-04-15",
+                "published_at": "2026-04-15T10:36:00+00:00",
+                "source_page": "issuer_documents",
+                "source_url": "https://www.ammc.ma/fr/espace-emetteurs/documents-information",
+                "pdf_url": "https://www.ammc.ma/sites/default/files/CP_Immorente_paiement_1er_2e_rendement_trimestriel_2026.pdf",
+                "detail_url": None,
+                "date_source": "published_at",
+                "warnings": [],
+            },
+        ],
+    }
+
+
 class FakeUpstream:
     """
     Duck-typed upstream client. Satisfies:
@@ -369,3 +426,12 @@ class FakeUpstream:
     ) -> Optional[Dict[str, Any]]:
         self._tick(f"news_sentiment:{symbol}:{window_days}")
         return news_sentiment(symbol, window_days)
+
+    def get_earnings_calendar(
+        self,
+        symbol: str,
+        *,
+        lookahead_days: int = 365,
+    ) -> Optional[Dict[str, Any]]:
+        self._tick(f"earnings_calendar:{symbol}:{lookahead_days}")
+        return earnings_calendar(symbol, lookahead_days)

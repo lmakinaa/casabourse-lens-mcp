@@ -134,3 +134,11 @@ def test_news_sentiment_is_cached(cache_path):
     c.get_news_sentiment("CSR", window_days=7)
     c.get_news_sentiment("CSR", window_days=7)
     assert up.calls["news_sentiment:CSR:7"] == 1
+
+
+def test_earnings_calendar_is_cached(cache_path):
+    up = FakeUpstream()
+    c = CachingDataProvider(up, cache_path=cache_path)
+    c.get_earnings_calendar("ATL", lookahead_days=365)
+    c.get_earnings_calendar("ATL", lookahead_days=365)
+    assert up.calls["earnings_calendar:ATL:365"] == 1

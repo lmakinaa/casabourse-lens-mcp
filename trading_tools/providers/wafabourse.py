@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from ..config import DEFAULT_HEADERS, REQUEST_TIMEOUT, WAFABOURSE_API
+from .ammc_calendar import fetch_earnings_calendar, load_issuer_map
 from .base import DataProvider
 from .news_rss import build_sentiment_snapshot, fetch_news_articles
 from .yahoo import YahooMarketDataClient, latest_and_change
@@ -31,6 +32,7 @@ class WafaBourseProvider(DataProvider):
         self.session = requests.Session()
         self.headers = DEFAULT_HEADERS.copy()
         self._yahoo = YahooMarketDataClient(self.session, REQUEST_TIMEOUT)
+        self._issuer_map = load_issuer_map()
 
     def _request(
         self,
@@ -268,3 +270,15 @@ class WafaBourseProvider(DataProvider):
         if news_payload is None:
             return None
         return build_sentiment_snapshot(symbol, window_days, news_payload)
+
+    def get_earnings_calendar(
+        self,
+        symbol: str,
+        *,
+        lookahead_days: int = 365,
+    ) -> Optional[Dict[str, Any]]:
+        return fetch_earnings_calendar(
+            symbol,
+            lookahead_days=lookahead_days,
+            issuer_map=self._issuer_map,
+        )

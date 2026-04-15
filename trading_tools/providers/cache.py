@@ -56,6 +56,7 @@ class TTLPolicy:
         DataClass.COMMODITY_PRICES: 21_600,
         DataClass.NEWS: 900,
         DataClass.NEWS_SENTIMENT: 1800,
+        DataClass.EARNINGS_CALENDAR: 3600,
     }
 
     def __init__(self, overrides: Optional[Dict[DataClass, int]] = None) -> None:
@@ -347,4 +348,16 @@ class CachingDataProvider(DataProvider):
             DataClass.NEWS_SENTIMENT,
             f"{symbol}:{window_days}",
             lambda: self._upstream.get_news_sentiment(symbol, window_days=window_days),
+        )
+
+    def get_earnings_calendar(
+        self,
+        symbol: str,
+        *,
+        lookahead_days: int = 365,
+    ) -> Optional[Dict[str, Any]]:
+        return self._fetch(
+            DataClass.EARNINGS_CALENDAR,
+            f"{symbol}:{lookahead_days}",
+            lambda: self._upstream.get_earnings_calendar(symbol, lookahead_days=lookahead_days),
         )
