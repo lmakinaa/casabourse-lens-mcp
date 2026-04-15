@@ -319,6 +319,27 @@ def test_commodity_prices(tools, parse_json):
     assert out["warnings"] == []
 
 
+def test_news(tools, parse_json):
+    out = parse_json(tools.execute_tool("get_news", {"symbol": "CSR", "limit": 5, "days": 7}))
+    assert out["symbol"] == "CSR"
+    assert out["window_days"] == 7
+    assert out["source"] == "fake_news"
+    assert out["article_count"] == 2
+    assert len(out["articles"]) == 2
+    assert out["articles"][0]["source"] in {"medias24", "lavieeco"}
+
+
+def test_news_sentiment(tools, parse_json):
+    out = parse_json(tools.execute_tool("get_news_sentiment", {"symbol": "CSR", "window_days": 7}))
+    assert out["symbol"] == "CSR"
+    assert out["window_days"] == 7
+    assert out["source"] == "fake_news"
+    assert out["mentions_current"] == 4
+    assert out["mentions_baseline_avg"] == 1.5
+    assert out["sentiment_label"] == "positive"
+    assert out["warnings"] == []
+
+
 # --------------------------------------------------------------------- #
 # Error paths — upstream returning None must surface as a clean error
 # string, never an uncaught exception.

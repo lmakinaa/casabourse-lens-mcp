@@ -118,3 +118,19 @@ def test_commodity_prices_are_cached(cache_path):
     c.get_commodity_prices()
     c.get_commodity_prices()
     assert up.calls["commodity_prices"] == 1
+
+
+def test_news_is_cached(cache_path):
+    up = FakeUpstream()
+    c = CachingDataProvider(up, cache_path=cache_path)
+    c.get_news("CSR", limit=10, days=7)
+    c.get_news("CSR", limit=10, days=7)
+    assert up.calls["news:CSR:10:7"] == 1
+
+
+def test_news_sentiment_is_cached(cache_path):
+    up = FakeUpstream()
+    c = CachingDataProvider(up, cache_path=cache_path)
+    c.get_news_sentiment("CSR", window_days=7)
+    c.get_news_sentiment("CSR", window_days=7)
+    assert up.calls["news_sentiment:CSR:7"] == 1

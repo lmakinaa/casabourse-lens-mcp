@@ -36,6 +36,8 @@ class DataClass(str, Enum):
     MACRO_SNAPSHOT = "macro_snapshot"
     FX_RATES = "fx_rates"
     COMMODITY_PRICES = "commodity_prices"
+    NEWS = "news"
+    NEWS_SENTIMENT = "news_sentiment"
 
 
 class ProviderError(RuntimeError):
@@ -94,3 +96,20 @@ class DataProvider(ABC):
 
     @abstractmethod
     def get_commodity_prices(self) -> Optional[Dict[str, Any]]: ...
+
+    @abstractmethod
+    def get_news(
+        self,
+        symbol: str,
+        *,
+        limit: int = 20,
+        days: int = 7,
+    ) -> Optional[Dict[str, Any]]: ...
+
+    @abstractmethod
+    def get_news_sentiment(
+        self,
+        symbol: str,
+        *,
+        window_days: int = 7,
+    ) -> Optional[Dict[str, Any]]: ...

@@ -45,6 +45,8 @@ from . import adjusted_price_history  # noqa: F401
 from . import macro_snapshot  # noqa: F401
 from . import fx_rates  # noqa: F401
 from . import commodity_prices  # noqa: F401
+from . import news  # noqa: F401
+from . import news_sentiment  # noqa: F401
 from . import orderflow_imbalance  # noqa: F401
 from . import correlation_matrix  # noqa: F401
 from . import beta  # noqa: F401

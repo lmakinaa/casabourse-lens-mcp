@@ -54,6 +54,8 @@ class TTLPolicy:
         DataClass.MACRO_SNAPSHOT: 21_600,
         DataClass.FX_RATES: 3600,
         DataClass.COMMODITY_PRICES: 21_600,
+        DataClass.NEWS: 900,
+        DataClass.NEWS_SENTIMENT: 1800,
     }
 
     def __init__(self, overrides: Optional[Dict[DataClass, int]] = None) -> None:
@@ -320,4 +322,29 @@ class CachingDataProvider(DataProvider):
             DataClass.COMMODITY_PRICES,
             "_",
             self._upstream.get_commodity_prices,
+        )
+
+    def get_news(
+        self,
+        symbol: str,
+        *,
+        limit: int = 20,
+        days: int = 7,
+    ) -> Optional[Dict[str, Any]]:
+        return self._fetch(
+            DataClass.NEWS,
+            f"{symbol}:{limit}:{days}",
+            lambda: self._upstream.get_news(symbol, limit=limit, days=days),
+        )
+
+    def get_news_sentiment(
+        self,
+        symbol: str,
+        *,
+        window_days: int = 7,
+    ) -> Optional[Dict[str, Any]]:
+        return self._fetch(
+            DataClass.NEWS_SENTIMENT,
+            f"{symbol}:{window_days}",
+            lambda: self._upstream.get_news_sentiment(symbol, window_days=window_days),
         )

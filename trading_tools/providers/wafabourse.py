@@ -16,6 +16,7 @@ import requests
 
 from ..config import DEFAULT_HEADERS, REQUEST_TIMEOUT, WAFABOURSE_API
 from .base import DataProvider
+from .news_rss import build_sentiment_snapshot, fetch_news_articles
 from .yahoo import YahooMarketDataClient, latest_and_change
 
 log = logging.getLogger(__name__)
@@ -239,3 +240,31 @@ class WafaBourseProvider(DataProvider):
             "warnings": warnings,
             "source": "yahoo_finance",
         }
+
+    def get_news(
+        self,
+        symbol: str,
+        *,
+        limit: int = 20,
+        days: int = 7,
+    ) -> Optional[Dict[str, Any]]:
+        return fetch_news_articles(
+            self.session,
+            timeout=REQUEST_TIMEOUT,
+            symbol=symbol,
+            limit=limit,
+            days=days,
+        )
+
+    def get_news_sentiment(
+        self,
+        symbol: str,
+        *,
+        window_days: int = 7,
+    ) -> Optional[Dict[str, Any]]:
+        # Pull a wider window so the baseline has enough observations.
+        lookback_days = max(window_days + 7, 14)
+        news_payload = self.get_news(symbol, limit=200, days=lookback_days)
+        if news_payload is None:
+            return None
+        return build_sentiment_snapshot(symbol, window_days, news_payload)

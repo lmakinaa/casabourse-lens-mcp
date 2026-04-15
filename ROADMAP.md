@@ -20,8 +20,8 @@ Tools to add next, ranked by impact on recommendation quality.
 | 10 | `get_foreign_ownership` | Foreign holding % per stock + weekly delta from Maroclear data. | Flows | Institutional positioning signal — retail traders can't see this. | 🔴 |
 | 11 | `get_block_trades` | Off-market / cross trades above a size threshold. | Flows | Leaks institutional accumulation or distribution. | 🟡 |
 | 12 | `analyze_orderflow_imbalance` ✅ **done** | Cumulative bid/ask imbalance computed from existing `get_recent_trades` tick data. | Flows | Pure computation over data you already fetch — high ROI, zero new sources. | 🟢 |
-| 13 | `get_news` | Moroccan financial press filtered per ticker (Médias24, L'Économiste, Finances News, La Vie Éco). RSS first. | Sentiment | Technical + fundamental without news = recommending the stock the day the CEO resigned. | 🟡 |
-| 14 | `get_news_sentiment` | Rolling sentiment score per ticker + mention volume delta vs. 7-day baseline. | Sentiment | Converts #13 from raw text into a signal the agent can weigh. | 🟡 |
+| 13 | `get_news` ✅ **phase 1 live** | Moroccan financial press filtered per ticker (RSS-first). Current coverage: Médias24 + La Vie Éco; L'Économiste + Finances News pending source adapters. | Sentiment | Technical + fundamental without news = recommending the stock the day the CEO resigned. | 🟡 |
+| 14 | `get_news_sentiment` ✅ **phase 1 live** | Rolling sentiment score per ticker + mention volume delta vs. 7-day baseline, computed from #13 mention stream. | Sentiment | Converts #13 from raw text into a signal the agent can weigh. | 🟡 |
 | 15 | `get_commodity_prices` ✅ **done** | Phosphate rock, Brent crude, gold spot + 30-day change. | Cross-asset | OCP ≈ phosphate. TAQA ≈ oil. Mining names ≈ metals. Core driver, not optional. | 🟢 |
 | 16 | `get_global_benchmarks` | MSCI EM, MSCI Frontier, CAC40, S&P 500 daily change. | Cross-asset | MASI tracks EM risk-on/risk-off with a ~1 day lag. | 🟢 |
 | 17 | `get_sovereign_spread` | Morocco 10Y USD bond yield vs. US 10Y Treasury. | Cross-asset | Proxy for country-risk repricing — early warning signal. | 🟡 |
@@ -42,6 +42,11 @@ Tools to add next, ranked by impact on recommendation quality.
 - ✅ Macro, FX, and commodities are live (`get_macro_snapshot`, `get_fx_rates`, `get_commodity_prices`).
 - ✅ Orderflow and portfolio-correlation are live (`analyze_orderflow_imbalance`, `get_correlation_matrix`).
 - ✅ `get_beta` is live with a cap-weighted synthetic MASI proxy (top-30 constituents) as the default benchmark and optional ticker benchmarks for sector/peer beta.
+- ✅ News + sentiment Phase 1 are live (`get_news`, `get_news_sentiment`) on `feat/news-sentiment`:
+	- RSS ingestion/provider path implemented with ticker mention extraction + deterministic sentiment scoring
+	- cache classes and TTLs added (`NEWS`, `NEWS_SENTIMENT`)
+	- current source coverage: Médias24, La Vie Éco
+	- pending Phase 2 source adapters: L'Économiste, Finances News
 
 ## Suggested Build Order
 
@@ -53,11 +58,12 @@ Build in this sequence for maximum recommendation-quality gain per unit of work:
 	- ✅ Phase 1 ingestion (BC dividends write path + `scrape-bourse` CLI + tests) completed.
 4. ~~**#5** (macro snapshot), **#6, #15** (FX, commodities)~~ ✅ completed.
 5. ~~**#12, #19, #20** (orderflow imbalance, correlation, beta)~~ ✅ completed.
-6. **#13 + #14** (news + sentiment) — the thing the tape doesn't show.
-7. **#3, #4** (earnings calendar, filings) — event risk guard.
-8. **#8, #9** (financial statements, peers) — deep fundamentals.
-9. **#18** (backtest) — calibration layer, requires everything above.
-10. **#10, #11, #17** (flows, blocks, sovereign spread) — the last mile.
+6. ~~**#13 + #14** (news + sentiment) — the thing the tape doesn't show.~~ ✅ **Phase 1 shipped on `feat/news-sentiment`**
+7. **Finish #13 source coverage** (L'Économiste + Finances News adapters/feeds).
+8. **#3, #4** (earnings calendar, filings) — event risk guard.
+9. **#8, #9** (financial statements, peers) — deep fundamentals.
+10. **#18** (backtest) — calibration layer, requires everything above.
+11. **#10, #11, #17** (flows, blocks, sovereign spread) — the last mile.
 
 The two infra items (#21, #22) are not optional — skip them and the codebase will need rewriting by tool #5 anyway. Pay the cost once, upfront.
 

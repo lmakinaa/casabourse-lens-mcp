@@ -218,6 +218,59 @@ def commodity_prices() -> Dict[str, Any]:
     }
 
 
+def news(symbol: str) -> Dict[str, Any]:
+    symbol = symbol.upper()
+    return {
+        "symbol": symbol,
+        "window_days": 7,
+        "as_of": "2026-04-15T10:00:00+00:00",
+        "source": "fake_news",
+        "sources_covered": ["medias24", "lavieeco"],
+        "article_count": 2,
+        "warnings": [],
+        "articles": [
+            {
+                "id": "n1",
+                "source": "medias24",
+                "title": "Cosumar annonce une croissance du chiffre d'affaires",
+                "url": "https://example.com/n1",
+                "published_at": "2026-04-15T08:00:00+00:00",
+                "summary": "COSUMAR améliore ses marges au T1.",
+                "symbols": [symbol],
+                "sentiment_score": 0.6,
+            },
+            {
+                "id": "n2",
+                "source": "lavieeco",
+                "title": "Le secteur sucrier sous pression des coûts",
+                "url": "https://example.com/n2",
+                "published_at": "2026-04-14T09:00:00+00:00",
+                "summary": "Le titre reste surveillé par le marché.",
+                "symbols": [symbol],
+                "sentiment_score": -0.2,
+            },
+        ],
+    }
+
+
+def news_sentiment(symbol: str, window_days: int = 7) -> Dict[str, Any]:
+    symbol = symbol.upper()
+    return {
+        "symbol": symbol,
+        "window_days": window_days,
+        "as_of": "2026-04-15T10:00:00+00:00",
+        "source": "fake_news",
+        "mentions_current": 4,
+        "mentions_baseline_avg": 1.5,
+        "mention_volume_delta_pct": 166.6667,
+        "sentiment_score": 0.2,
+        "sentiment_label": "positive",
+        "sample_size": 4,
+        "sources_covered": ["medias24", "lavieeco"],
+        "warnings": [],
+    }
+
+
 class FakeUpstream:
     """
     Duck-typed upstream client. Satisfies:
@@ -293,3 +346,26 @@ class FakeUpstream:
     def get_commodity_prices(self) -> Optional[Dict[str, Any]]:
         self._tick("commodity_prices")
         return commodity_prices()
+
+    def get_news(
+        self,
+        symbol: str,
+        *,
+        limit: int = 20,
+        days: int = 7,
+    ) -> Optional[Dict[str, Any]]:
+        self._tick(f"news:{symbol}:{limit}:{days}")
+        payload = news(symbol)
+        payload["window_days"] = days
+        payload["article_count"] = min(limit, payload["article_count"])
+        payload["articles"] = payload["articles"][:limit]
+        return payload
+
+    def get_news_sentiment(
+        self,
+        symbol: str,
+        *,
+        window_days: int = 7,
+    ) -> Optional[Dict[str, Any]]:
+        self._tick(f"news_sentiment:{symbol}:{window_days}")
+        return news_sentiment(symbol, window_days)
