@@ -190,6 +190,32 @@ def macro_snapshot() -> Dict[str, Any]:
     }
 
 
+def fx_rates() -> Dict[str, Any]:
+    return {
+        "usd_mad_spot": 9.98,
+        "eur_mad_spot": 10.82,
+        "usd_mad_20d_change_pct": 0.45,
+        "eur_mad_20d_change_pct": -0.22,
+        "as_of": "2026-04-15",
+        "warnings": [],
+        "source": "fake_fx",
+    }
+
+
+def commodity_prices() -> Dict[str, Any]:
+    return {
+        "brent_usd_per_bbl": 84.2,
+        "brent_30d_change_pct": 3.2,
+        "gold_usd_per_oz": 2310.0,
+        "gold_30d_change_pct": 1.1,
+        "phosphate_usd_per_mt": 152.0,
+        "phosphate_30d_change_pct": 0.0,
+        "as_of": "2026-04-15",
+        "warnings": [],
+        "source": "fake_commodities",
+    }
+
+
 class FakeUpstream:
     """
     Duck-typed upstream client. Satisfies:
@@ -257,3 +283,11 @@ class FakeUpstream:
     def get_macro_snapshot(self) -> Optional[Dict[str, Any]]:
         self._tick("macro_snapshot")
         return macro_snapshot()
+
+    def get_fx_rates(self) -> Optional[Dict[str, Any]]:
+        self._tick("fx_rates")
+        return fx_rates()
+
+    def get_commodity_prices(self) -> Optional[Dict[str, Any]]:
+        self._tick("commodity_prices")
+        return commodity_prices()

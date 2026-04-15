@@ -102,3 +102,19 @@ def test_macro_snapshot_is_cached(cache_path):
     c.get_macro_snapshot()
     c.get_macro_snapshot()
     assert up.calls["macro_snapshot"] == 1
+
+
+def test_fx_rates_are_cached(cache_path):
+    up = FakeUpstream()
+    c = CachingDataProvider(up, cache_path=cache_path)
+    c.get_fx_rates()
+    c.get_fx_rates()
+    assert up.calls["fx_rates"] == 1
+
+
+def test_commodity_prices_are_cached(cache_path):
+    up = FakeUpstream()
+    c = CachingDataProvider(up, cache_path=cache_path)
+    c.get_commodity_prices()
+    c.get_commodity_prices()
+    assert up.calls["commodity_prices"] == 1

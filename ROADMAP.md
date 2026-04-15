@@ -13,7 +13,7 @@ Tools to add next, ranked by impact on recommendation quality.
 | 3 | `get_earnings_calendar` | Next earnings/publication date per ticker from AMMC filings. | Event risk | Stops the agent from recommending a trade 2 days before a binary event. | 🟡 |
 | 4 | `get_regulatory_filings` | AMMC notices: tender offers (OPA/OPR/OPE), profit warnings, material disclosures. | Event risk | Catches market-moving news the tape hasn't priced yet. | 🟡 |
 | 5 | `get_macro_snapshot` ✅ **done** | BAM policy rate, 13w/52w T-bill yield, CPI YoY, equity risk premium vs. MASI dividend yield. | Macro | Moroccan equities (esp. banks ≈35% of MASI) are rate-sensitive. Context the ticker doesn't show. | 🟢 |
-| 6 | `get_fx_rates` | EUR/MAD, USD/MAD spot + 20-day change. | Macro | Drives earnings for exporters (OCP, IAM international, tourism). | 🟢 |
+| 6 | `get_fx_rates` ✅ **done** | EUR/MAD, USD/MAD spot + 20-day change. | Macro | Drives earnings for exporters (OCP, IAM international, tourism). | 🟢 |
 | 7 | `get_yield_curve` | BAM primary auction results by tenor. | Macro | Lets the agent compare equity earnings yield to risk-free. | 🟢 |
 | 8 | `get_financial_statements` | Multi-year income statement, balance sheet, cash flow per issuer. | Fundamentals | Current `get_financial_metrics` is a ratio snapshot — no trend, no quality check. | 🔴 |
 | 9 | `get_sector_peers` | Peer basket by sector with relative valuation table (P/E, P/B, EV/EBITDA, DY, ROE). | Fundamentals | Answers "is this cheap?" properly. Depends on #8. | 🟡 |
@@ -22,7 +22,7 @@ Tools to add next, ranked by impact on recommendation quality.
 | 12 | `analyze_orderflow_imbalance` | Cumulative bid/ask imbalance computed from existing `get_recent_trades` tick data. | Flows | Pure computation over data you already fetch — high ROI, zero new sources. | 🟢 |
 | 13 | `get_news` | Moroccan financial press filtered per ticker (Médias24, L'Économiste, Finances News, La Vie Éco). RSS first. | Sentiment | Technical + fundamental without news = recommending the stock the day the CEO resigned. | 🟡 |
 | 14 | `get_news_sentiment` | Rolling sentiment score per ticker + mention volume delta vs. 7-day baseline. | Sentiment | Converts #13 from raw text into a signal the agent can weigh. | 🟡 |
-| 15 | `get_commodity_prices` | Phosphate rock, Brent crude, gold spot + 30-day change. | Cross-asset | OCP ≈ phosphate. TAQA ≈ oil. Mining names ≈ metals. Core driver, not optional. | 🟢 |
+| 15 | `get_commodity_prices` ✅ **done** | Phosphate rock, Brent crude, gold spot + 30-day change. | Cross-asset | OCP ≈ phosphate. TAQA ≈ oil. Mining names ≈ metals. Core driver, not optional. | 🟢 |
 | 16 | `get_global_benchmarks` | MSCI EM, MSCI Frontier, CAC40, S&P 500 daily change. | Cross-asset | MASI tracks EM risk-on/risk-off with a ~1 day lag. | 🟢 |
 | 17 | `get_sovereign_spread` | Morocco 10Y USD bond yield vs. US 10Y Treasury. | Cross-asset | Proxy for country-risk repricing — early warning signal. | 🟡 |
 | 18 | `backtest_signal` | Given a signal definition, return historical win rate, avg return, max drawdown, Sharpe over N years on a ticker or basket. | Calibration | Converts "looks bullish" into "this setup has a 55% hit rate on this name." Requires persistence (#21). | 🔴 |
@@ -39,7 +39,8 @@ Tools to add next, ranked by impact on recommendation quality.
 	- TLS/retry/throttle HTTP client in place
 	- BC agent + issuer mapping in place
 	- end-to-end ingestion tests added and passing
-- 🔜 Next highest-ROI roadmap items remain **#6, #15** (FX, commodities), then **#12, #19, #20**.
+- ✅ Macro, FX, and commodities are live (`get_macro_snapshot`, `get_fx_rates`, `get_commodity_prices`).
+- 🔜 Next highest-ROI roadmap items remain **#12, #19, #20** (orderflow imbalance, correlation, beta).
 
 ## Suggested Build Order
 
@@ -49,7 +50,7 @@ Build in this sequence for maximum recommendation-quality gain per unit of work:
 2. ~~**#21** (DuckDB cache) — unlocks history, backtesting, and resilience.~~ ✅ shipped on `v2`
 3. ~~**#1 + #2** (corporate actions + adjusted prices) — biggest data-quality fix.~~ ✅ shipped on `feat/corporate-actions-adjusted-prices`
 	- ✅ Phase 1 ingestion (BC dividends write path + `scrape-bourse` CLI + tests) completed.
-4. ~~**#5** (macro snapshot)~~ ✅ completed, then **#6, #15** (FX, commodities).
+4. ~~**#5** (macro snapshot), **#6, #15** (FX, commodities)~~ ✅ completed.
 5. **#12, #19, #20** (orderflow imbalance, correlation, beta) — pure computation over existing data.
 6. **#13 + #14** (news + sentiment) — the thing the tape doesn't show.
 7. **#3, #4** (earnings calendar, filings) — event risk guard.

@@ -52,6 +52,8 @@ class TTLPolicy:
         DataClass.SHAREHOLDERS: 86_400,
         DataClass.FINANCIAL_METRICS: 86_400,
         DataClass.MACRO_SNAPSHOT: 21_600,
+        DataClass.FX_RATES: 3600,
+        DataClass.COMMODITY_PRICES: 21_600,
     }
 
     def __init__(self, overrides: Optional[Dict[DataClass, int]] = None) -> None:
@@ -304,4 +306,18 @@ class CachingDataProvider(DataProvider):
             DataClass.MACRO_SNAPSHOT,
             "_",
             self._upstream.get_macro_snapshot,
+        )
+
+    def get_fx_rates(self) -> Optional[Dict[str, Any]]:
+        return self._fetch(
+            DataClass.FX_RATES,
+            "_",
+            self._upstream.get_fx_rates,
+        )
+
+    def get_commodity_prices(self) -> Optional[Dict[str, Any]]:
+        return self._fetch(
+            DataClass.COMMODITY_PRICES,
+            "_",
+            self._upstream.get_commodity_prices,
         )
