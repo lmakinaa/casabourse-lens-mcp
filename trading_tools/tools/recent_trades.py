@@ -27,29 +27,52 @@ def handle(ctx: ToolContext, args: dict) -> str:
 
     trades = trades[:limit]
 
+    # WafaBourse VALEUR-TRANSACTION returns trades newest-first with no
+    # aggressor flag. We apply the Lee-Ready tick rule on a time-ordered
+    # series (oldest → newest): uptick = BUY, downtick = SELL, zero-tick
+    # inherits the previous classification. Unclassifiable leading
+    # zero-ticks are left as UNKNOWN and excluded from flow totals.
+    ordered = list(reversed(trades))
+
     total_buy_volume = 0
     total_sell_volume = 0
     prices = []
+    classifications: list[str] = []
 
-    formatted_trades = []
-    for trade in trades:
-        price = trade.get('Cours', 0)
-        qty = trade.get('Qte', 0)
-        sens = trade.get('Sens', '')
+    prev_price: float | None = None
+    prev_direction: str | None = None
+    for trade in ordered:
+        price = trade.get('Prix', 0) or 0
+        qty = trade.get('Qte', 0) or 0
 
-        prices.append(price)
+        if prev_price is None or price > prev_price:
+            direction = "BUY" if prev_price is not None else "UNKNOWN"
+        elif price < prev_price:
+            direction = "SELL"
+        else:
+            direction = prev_direction or "UNKNOWN"
 
-        if sens == 'A':
+        if direction == "BUY":
             total_buy_volume += qty
-        elif sens == 'V':
+        elif direction == "SELL":
             total_sell_volume += qty
 
+        classifications.append(direction)
+        prev_price = price
+        if direction in ("BUY", "SELL"):
+            prev_direction = direction
+
+    formatted_trades = []
+    for trade, direction in zip(trades, reversed(classifications)):
+        price = trade.get('Prix', 0) or 0
+        qty = trade.get('Qte', 0) or 0
+        prices.append(price)
         formatted_trades.append({
             "time": trade.get('Heure', ''),
             "price": price,
             "quantity": qty,
-            "direction": "BUY" if sens == 'A' else "SELL" if sens == 'V' else "UNKNOWN",
-            "value_mad": price * qty
+            "direction": direction,
+            "value_mad": round(price * qty, 2),
         })
 
     total_volume = total_buy_volume + total_sell_volume

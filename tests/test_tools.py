@@ -175,10 +175,17 @@ def test_recent_trades(tools, parse_json):
     out = parse_json(tools.execute_tool("get_recent_trades", {"symbol": "TEST"}))
     assert out["num_trades"] == 5
     flow = out["trade_flow_analysis"]
-    assert flow["total_buy_volume"] == 100 + 150 + 120  # 370
-    assert flow["total_sell_volume"] == 80 + 90  # 170
-    assert flow["net_flow"] in {"BUYING_PRESSURE", "SELLING_PRESSURE", "NEUTRAL"}
-    assert flow["net_flow"] == "BUYING_PRESSURE"  # 370/540 ≈ 68.5%
+    # Tick rule on oldest→newest prices [110.0, 110.2, 110.1, 110.3, 110.0]:
+    # first trade has no predecessor → UNKNOWN, excluded from flow.
+    # 110.2 uptick → BUY 150; 110.1 downtick → SELL 80;
+    # 110.3 uptick → BUY 120; 110.0 downtick → SELL 90.
+    assert flow["total_buy_volume"] == 150 + 120  # 270
+    assert flow["total_sell_volume"] == 80 + 90   # 170
+    assert flow["net_flow"] == "BUYING_PRESSURE"  # 270/440 ≈ 61.4%
+    # Prices flow through (no longer zero) and tick-rule labels the newest.
+    first_trade = out["trades"][0]
+    assert first_trade["price"] == 110.0
+    assert first_trade["direction"] == "SELL"
 
 
 def test_screen_stocks_direction_up(tools, parse_json):

@@ -85,12 +85,14 @@ def order_book() -> List[Dict[str, Any]]:
 
 
 def recent_trades() -> List[Dict[str, Any]]:
+    # WafaBourse returns trades newest-first, with fields Prix/Qte/Heure/
+    # IdLigne/Variation. No Sens (aggressor) field is exposed.
     return [
-        {"Heure": "10:00:00", "Cours": 110.0, "Qte": 100, "Sens": "A"},
-        {"Heure": "10:01:00", "Cours": 110.2, "Qte": 150, "Sens": "A"},
-        {"Heure": "10:02:00", "Cours": 110.1, "Qte": 80, "Sens": "V"},
-        {"Heure": "10:03:00", "Cours": 110.3, "Qte": 120, "Sens": "A"},
-        {"Heure": "10:04:00", "Cours": 110.0, "Qte": 90, "Sens": "V"},
+        {"IdLigne": 5, "Heure": "10:04:00", "Prix": 110.0, "Qte": 90, "Variation": 0.0},
+        {"IdLigne": 4, "Heure": "10:03:00", "Prix": 110.3, "Qte": 120, "Variation": 0.27},
+        {"IdLigne": 3, "Heure": "10:02:00", "Prix": 110.1, "Qte": 80, "Variation": -0.09},
+        {"IdLigne": 2, "Heure": "10:01:00", "Prix": 110.2, "Qte": 150, "Variation": 0.18},
+        {"IdLigne": 1, "Heure": "10:00:00", "Prix": 110.0, "Qte": 100, "Variation": 0.0},
     ]
 
 
