@@ -239,12 +239,17 @@ def fetch_news_articles(
     warnings: List[str] = []
     articles: List[NewsArticle] = []
 
+    # Feeds vary 0.5s..3s in practice; give them headroom beyond the default
+    # 10s provider budget since one slow feed would otherwise drop the whole
+    # article (connect timeout is separate and kept tight).
+    feed_timeout = (5.0, max(float(timeout), 15.0))
+
     for source, url in _FEEDS:
         try:
             response = session.get(
                 url,
                 headers={"User-Agent": "Mozilla/5.0", "Accept": "application/rss+xml, application/xml"},
-                timeout=timeout,
+                timeout=feed_timeout,
             )
             response.raise_for_status()
             root = ElementTree.fromstring(response.content)
