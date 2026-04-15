@@ -20,7 +20,7 @@ Tools to add next, ranked by impact on recommendation quality.
 | 10 | `get_foreign_ownership` | Foreign holding % per stock + weekly delta from Maroclear data. | Flows | Institutional positioning signal — retail traders can't see this. | 🔴 |
 | 11 | `get_block_trades` | Off-market / cross trades above a size threshold. | Flows | Leaks institutional accumulation or distribution. | 🟡 |
 | 12 | `analyze_orderflow_imbalance` ✅ **done** | Cumulative bid/ask imbalance computed from existing `get_recent_trades` tick data. | Flows | Pure computation over data you already fetch — high ROI, zero new sources. | 🟢 |
-| 13 | `get_news` ✅ **phase 1 live** | Moroccan financial press filtered per ticker (RSS-first). Current coverage: Médias24 + La Vie Éco; L'Économiste + Finances News pending source adapters. | Sentiment | Technical + fundamental without news = recommending the stock the day the CEO resigned. | 🟡 |
+| 13 | `get_news` ✅ **phase 1 live** | Moroccan finance/economy press filtered per ticker (RSS-first). Current coverage: Médias24 + La Vie Éco. | Sentiment | Technical + fundamental without news = recommending the stock the day the CEO resigned. | 🟡 |
 | 14 | `get_news_sentiment` ✅ **phase 1 live** | Rolling sentiment score per ticker + mention volume delta vs. 7-day baseline, computed from #13 mention stream. | Sentiment | Converts #13 from raw text into a signal the agent can weigh. | 🟡 |
 | 15 | `get_commodity_prices` ✅ **done** | Phosphate rock, Brent crude, gold spot + 30-day change. | Cross-asset | OCP ≈ phosphate. TAQA ≈ oil. Mining names ≈ metals. Core driver, not optional. | 🟢 |
 | 16 | `get_global_benchmarks` | MSCI EM, MSCI Frontier, CAC40, S&P 500 daily change. | Cross-asset | MASI tracks EM risk-on/risk-off with a ~1 day lag. | 🟢 |
@@ -46,7 +46,9 @@ Tools to add next, ranked by impact on recommendation quality.
 	- RSS ingestion/provider path implemented with ticker mention extraction + deterministic sentiment scoring
 	- cache classes and TTLs added (`NEWS`, `NEWS_SENTIMENT`)
 	- current source coverage: Médias24, La Vie Éco
-	- pending Phase 2 source adapters: L'Économiste, Finances News
+	- additional RSS probes completed for Aujourd'hui le Maroc, La Nouvelle Tribune, and Hespress, but they were excluded from the finance/economy set because their feeds are general-news heavy
+	- L'Économiste probe returned homepage HTML/redirects rather than a usable RSS feed; defer unless an API fallback is approved
+	- Finances News exposes sitemaps/HTML, not a usable RSS feed; keep it out of the RSS-first scope until a non-RSS adapter is approved
 
 ## Suggested Build Order
 
@@ -59,14 +61,21 @@ Build in this sequence for maximum recommendation-quality gain per unit of work:
 4. ~~**#5** (macro snapshot), **#6, #15** (FX, commodities)~~ ✅ completed.
 5. ~~**#12, #19, #20** (orderflow imbalance, correlation, beta)~~ ✅ completed.
 6. ~~**#13 + #14** (news + sentiment) — the thing the tape doesn't show.~~ ✅ **Phase 1 shipped on `feat/news-sentiment`**
-8. **#3, #4** (earnings calendar, filings) — event risk guard.
-9. **#8, #9** (financial statements, peers) — deep fundamentals.
-10. **#18** (backtest) — calibration layer, requires everything above.
-11. **#10, #11, #17** (flows, blocks, sovereign spread) — the last mile.
-12. **Finish #13 source coverage** (L'Économiste + Finances News adapters/feeds).
+7. **#3, #4** (earnings calendar, filings) — event risk guard.
+8. **#8, #9** (financial statements, peers) — deep fundamentals.
+9. **#18** (backtest) — calibration layer, requires everything above.
+10. **#10, #11, #17** (flows, blocks, sovereign spread) — the last mile.
 
 The two infra items (#21, #22) are not optional — skip them and the codebase will need rewriting by tool #5 anyway. Pay the cost once, upfront.
 
 ## Design Principle
 
 **Tools return facts, not opinions.** Every tool on this list outputs raw data or historical statistics — never a "BUY/SELL" verdict or AI-generated price target. The LLM composes recommendations *from* the tools; no tool pretends to be an analyst. See the architectural notes for the reasoning.
+
+## Deferred Source Candidates (end-of-roadmap backlog)
+
+- L'Économiste (current probe returns homepage HTML/redirects; no usable RSS endpoint found)
+- Finances News (sitemaps/HTML available, but no usable RSS endpoint)
+- Aujourd'hui le Maroc (RSS reachable but general-news heavy)
+- La Nouvelle Tribune (RSS reachable but general-news heavy)
+- Hespress (RSS reachable but general-news heavy)
