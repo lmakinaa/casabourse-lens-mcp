@@ -202,6 +202,39 @@ def back_adjust(
 # ── internals ─────────────────────────────────────────────────
 
 
+def _as_float(value: Any, default: float) -> float:
+    """
+    Coerce a feed value to float. Live WafaBourse occasionally emits
+    '' (e.g. blank Volume); treat blanks/None as the caller's default.
+    """
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if not s:
+        return default
+    try:
+        return float(s)
+    except ValueError:
+        return default
+
+
+def _parse_bar_date(raw: str) -> date:
+    """
+    Parse a date string from a price-history row.
+
+    WafaBourse emits 'DD/MM/YYYY HH:MM:SS' (e.g. '17/04/2023 00:00:00');
+    the ingestion pipeline and tests use ISO 'YYYY-MM-DD'. Accept both
+    so the adjuster doesn't care which upstream produced the bars.
+    """
+    head = raw[:10].strip()
+    if "/" in head:
+        day, month, year = head.split("/", 2)
+        return date(int(year), int(month), int(day))
+    return date.fromisoformat(head)
+
+
 def _parse_bars(ohlcv: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Normalise the raw WafaBourse shape to a typed dict with python
@@ -214,18 +247,20 @@ def _parse_bars(ohlcv: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if raw_date is None:
             continue
         if isinstance(raw_date, str):
-            # Accept both '2025-05-12' and '2025-05-12 00:00:00'
-            bar_date = date.fromisoformat(raw_date[:10])
+            try:
+                bar_date = _parse_bar_date(raw_date)
+            except (ValueError, IndexError):
+                continue
         elif isinstance(raw_date, date):
             bar_date = raw_date
         else:
             continue
 
-        close = float(row.get("Cours", row.get("close", 0.0)))
-        open_ = float(row.get("Ouverture", row.get("open", close)))
-        high = float(row.get("PlusHaut", row.get("high", close)))
-        low = float(row.get("PlusBas", row.get("low", close)))
-        volume = float(row.get("Volume", row.get("volume", 0.0)))
+        close = _as_float(row.get("Cours", row.get("close")), 0.0)
+        open_ = _as_float(row.get("Ouverture", row.get("open")), close)
+        high = _as_float(row.get("PlusHaut", row.get("high")), close)
+        low = _as_float(row.get("PlusBas", row.get("low")), close)
+        volume = _as_float(row.get("Volume", row.get("volume")), 0.0)
 
         parsed[bar_date] = {
             "date": bar_date,

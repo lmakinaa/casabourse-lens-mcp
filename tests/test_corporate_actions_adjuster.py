@@ -235,3 +235,22 @@ def test_empty_history_returns_empty():
     bars, report = back_adjust([_event(EventType.DIVIDEND, "2025-01-01", amount=1.0)], [])
     assert bars == []
     assert report.applied == []
+
+
+def test_accepts_wafabourse_live_row_shape():
+    # WafaBourse's VALEUR-GRAPH emits DD/MM/YYYY dates and occasionally
+    # blank Volume. The adjuster must accept that shape as-is without
+    # falling back to a normalisation layer upstream.
+    live_shape = [
+        {"Seance": "17/04/2023 00:00:00", "Cours": 82.5, "Volume": 1_890_212.1},
+        {"Seance": "18/04/2023 00:00:00", "Cours": 82.0, "Volume": ""},
+        {"Seance": "14/04/2026 00:00:00", "Cours": 95.4, "Volume": 11_975_665.87},
+    ]
+    bars, report = back_adjust([], live_shape)
+    assert [b.bar_date for b in bars] == [
+        date(2023, 4, 17),
+        date(2023, 4, 18),
+        date(2026, 4, 14),
+    ]
+    assert bars[1].volume == 0.0
+    assert report.skipped == []
