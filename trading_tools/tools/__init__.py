@@ -47,6 +47,7 @@ from . import fx_rates  # noqa: F401
 from . import commodity_prices  # noqa: F401
 from . import orderflow_imbalance  # noqa: F401
 from . import correlation_matrix  # noqa: F401
+from . import beta  # noqa: F401
 
 
 class TradingTools:

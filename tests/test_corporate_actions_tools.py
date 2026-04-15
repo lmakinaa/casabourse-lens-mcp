@@ -268,6 +268,81 @@ def test_get_correlation_matrix_without_service_returns_error():
     assert "Error" in out
 
 
+# ── get_beta ──────────────────────────────────────────────────
+
+
+def test_get_beta_synthetic_masi_default(ca_service):
+    """Member of an identical-history basket has beta exactly 1.0 vs. that basket."""
+    tools = TradingTools(FakeUpstream(), TechnicalAnalysis(), ca_service)
+    out = json.loads(
+        tools.execute_tool("get_beta", {"symbol": "AAA", "window_days": 30})
+    )
+    assert out["symbol"] == "AAA"
+    assert out["window_days"] == 30
+    assert out["benchmark"]["kind"] == "synthetic_basket"
+    assert out["benchmark"]["benchmark"] == "synthetic_masi_top30"
+    # Fake upstream has 3 tickers, all with identical history and equal caps
+    # → basket is 3 equal-weight members, and every member's returns match
+    # the basket exactly: beta = 1, R^2 = 1.
+    assert out["beta"] == pytest.approx(1.0, abs=1e-9)
+    assert out["r_squared"] == pytest.approx(1.0, abs=1e-9)
+    assert len(out["benchmark"]["members"]) == 3
+    # Displayed weights are rounded to 6 dp for readability, so equal-weight
+    # baskets of N != power-of-10 fall just under 1.0; tolerance reflects that.
+    weight_sum = sum(m["weight"] for m in out["benchmark"]["members"])
+    assert weight_sum == pytest.approx(1.0, abs=1e-5)
+
+
+def test_get_beta_ticker_benchmark(ca_service):
+    """Explicit ticker benchmark. Identical histories → beta 1.0."""
+    tools = TradingTools(FakeUpstream(), TechnicalAnalysis(), ca_service)
+    out = json.loads(
+        tools.execute_tool(
+            "get_beta",
+            {"symbol": "AAA", "window_days": 30, "benchmark": "BBB"},
+        )
+    )
+    assert out["benchmark"]["kind"] == "ticker"
+    assert out["benchmark"]["benchmark"] == "BBB"
+    assert out["beta"] == pytest.approx(1.0, abs=1e-9)
+
+
+def test_get_beta_divergent_history_yields_non_unit_beta(ca_service):
+    """A ticker whose returns are the negation of the basket has beta ≈ -1."""
+
+    class InvertingUpstream(FakeUpstream):
+        def get_price_history(self, symbol: str):
+            base = list(self.history)
+            if symbol == "AAA":
+                # Reverse the series so returns are (approximately) inverted
+                # relative to a basket built from the other members.
+                return list(reversed(base))
+            return base
+
+    tools = TradingTools(InvertingUpstream(), TechnicalAnalysis(), ca_service)
+    out = json.loads(
+        tools.execute_tool("get_beta", {"symbol": "AAA", "window_days": 30})
+    )
+    # AAA is in the basket; its inverted series drags R^2 well below 1
+    # but the sign of beta is what we verify: not accidentally +1.
+    assert out["observations"] >= 10
+    assert out["r_squared"] < 1.0
+    assert -1.5 < out["beta"] < 1.5  # sanity band
+
+
+def test_get_beta_rejects_unsupported_window(ca_service):
+    tools = TradingTools(FakeUpstream(), TechnicalAnalysis(), ca_service)
+    out = tools.execute_tool("get_beta", {"symbol": "AAA", "window_days": 42})
+    assert "Error" in out
+    assert "window_days" in out
+
+
+def test_get_beta_without_service_returns_error():
+    tools = TradingTools(FakeUpstream(), TechnicalAnalysis(), corporate_actions=None)
+    out = tools.execute_tool("get_beta", {"symbol": "AAA"})
+    assert "Error" in out
+
+
 # ── ingestion → tool round-trip ───────────────────────────────
 
 

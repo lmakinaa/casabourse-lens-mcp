@@ -278,6 +278,11 @@ def test_correlation_matrix_requires_ca_service(tools):
     assert "corporate-action service not configured" in out
 
 
+def test_beta_requires_ca_service(tools):
+    out = tools.execute_tool("get_beta", {"symbol": "AAA"})
+    assert "corporate-action service not configured" in out
+
+
 def test_macro_snapshot(tools, parse_json):
     out = parse_json(tools.execute_tool("get_macro_snapshot", {}))
     assert out["source"] == "fake_macro"

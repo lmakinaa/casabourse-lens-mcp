@@ -27,7 +27,7 @@ Tools to add next, ranked by impact on recommendation quality.
 | 17 | `get_sovereign_spread` | Morocco 10Y USD bond yield vs. US 10Y Treasury. | Cross-asset | Proxy for country-risk repricing — early warning signal. | 🟡 |
 | 18 | `backtest_signal` | Given a signal definition, return historical win rate, avg return, max drawdown, Sharpe over N years on a ticker or basket. | Calibration | Converts "looks bullish" into "this setup has a 55% hit rate on this name." Requires persistence (#21). | 🔴 |
 | 19 | `get_correlation_matrix` ✅ **done** | Rolling 30/90/180-day correlations across a basket of tickers. | Portfolio | Flags concentration risk when the agent builds a multi-name recommendation. | 🟢 |
-| 20 | `get_beta` | Stock vs. MASI beta, rolling window, with standard error. **Blocked:** no verified daily MASI history source in current provider stack. | Portfolio | Point estimates lie. Returning the error bar keeps the agent honest about confidence. | 🟢 |
+| 20 | `get_beta` ✅ **done** | Rolling OLS beta with standard error, R², and 95% CI. Benchmark defaults to a cap-weighted synthetic MASI (top-30 constituents covering ~91% of market cap); ticker benchmarks supported for sector/peer beta. | Portfolio | Point estimates lie. Returning the error bar keeps the agent honest about confidence. | 🟢 |
 | 21 | **DuckDB cache layer** *(infra, not a tool)* ✅ **done** | Write-through cache for quotes, OHLCV, fundamentals, corporate actions with per-class TTLs. | Infra | Unlocks #18, fixes the WafaBourse single-point-of-failure, enables historical features. | 🔴 |
 | 22 | **`DataProvider` refactor** *(infra, not a tool)* ✅ **done** | Pluggable provider interface so WafaBourse isn't hardcoded into every tool. | Infra | Without this, adding AMMC, BAM, news, and FX means touching 17 tool methods. Do this *before* #1. | 🟡 |
 
@@ -41,7 +41,7 @@ Tools to add next, ranked by impact on recommendation quality.
 	- end-to-end ingestion tests added and passing
 - ✅ Macro, FX, and commodities are live (`get_macro_snapshot`, `get_fx_rates`, `get_commodity_prices`).
 - ✅ Orderflow and portfolio-correlation are live (`analyze_orderflow_imbalance`, `get_correlation_matrix`).
-- ⚠️ `get_beta` (**#20**) is currently blocked on a reliable daily MASI history source.
+- ✅ `get_beta` is live with a cap-weighted synthetic MASI proxy (top-30 constituents) as the default benchmark and optional ticker benchmarks for sector/peer beta.
 
 ## Suggested Build Order
 
@@ -52,13 +52,12 @@ Build in this sequence for maximum recommendation-quality gain per unit of work:
 3. ~~**#1 + #2** (corporate actions + adjusted prices) — biggest data-quality fix.~~ ✅ shipped on `feat/corporate-actions-adjusted-prices`
 	- ✅ Phase 1 ingestion (BC dividends write path + `scrape-bourse` CLI + tests) completed.
 4. ~~**#5** (macro snapshot), **#6, #15** (FX, commodities)~~ ✅ completed.
-5. ~~**#12, #19** (orderflow imbalance, correlation)~~ ✅ completed.
-6. **#20** (beta) — pending daily MASI history source integration.
-7. **#13 + #14** (news + sentiment) — the thing the tape doesn't show.
-8. **#3, #4** (earnings calendar, filings) — event risk guard.
-9. **#8, #9** (financial statements, peers) — deep fundamentals.
-10. **#18** (backtest) — calibration layer, requires everything above.
-11. **#10, #11, #17** (flows, blocks, sovereign spread) — the last mile.
+5. ~~**#12, #19, #20** (orderflow imbalance, correlation, beta)~~ ✅ completed.
+6. **#13 + #14** (news + sentiment) — the thing the tape doesn't show.
+7. **#3, #4** (earnings calendar, filings) — event risk guard.
+8. **#8, #9** (financial statements, peers) — deep fundamentals.
+9. **#18** (backtest) — calibration layer, requires everything above.
+10. **#10, #11, #17** (flows, blocks, sovereign spread) — the last mile.
 
 The two infra items (#21, #22) are not optional — skip them and the codebase will need rewriting by tool #5 anyway. Pay the cost once, upfront.
 
