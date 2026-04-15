@@ -143,3 +143,40 @@ def test_fetch_regulatory_filings_extracts_event_risk_items(monkeypatch):
         "profit_warning",
         "material_disclosure",
     }
+
+
+def test_build_runtime_issuer_map_adds_libelle_variants():
+    static_map = {"AKDITAL": "AKT"}
+    tickers = [
+        {"Symbol": "AKT", "Libelle": "AKDITAL GROUP S.A."},
+        {"Symbol": "IAM", "Libelle": "ITISSALAT AL-MAGHRIB"},
+        {"Symbol": "ATW", "Libelle": "ATTIJARIWAFA BANK"},
+    ]
+
+    merged = ammc_calendar.build_runtime_issuer_map(static_map, tickers)
+
+    # Original static entry preserved.
+    assert merged["AKDITAL"] == "AKT"
+    # Full Libelle resolves to the symbol (suffix stripped too).
+    assert merged.get("AKDITAL GROUP S A") == "AKT" or merged.get("AKDITAL GROUP") == "AKT"
+    # New issuers fully covered.
+    assert merged.get("ITISSALAT AL MAGHRIB") == "IAM"
+    assert merged.get("ATTIJARIWAFA BANK") == "ATW"
+
+
+def test_build_runtime_issuer_map_handles_empty_tickers():
+    static_map = {"AKDITAL": "AKT"}
+
+    merged = ammc_calendar.build_runtime_issuer_map(static_map, None)
+    assert merged == static_map
+
+    merged = ammc_calendar.build_runtime_issuer_map(static_map, [])
+    assert merged == static_map
+
+
+def test_build_runtime_issuer_map_static_takes_precedence():
+    static_map = {"AKDITAL": "XXX"}  # intentionally wrong to check precedence
+    tickers = [{"Symbol": "AKT", "Libelle": "AKDITAL"}]
+
+    merged = ammc_calendar.build_runtime_issuer_map(static_map, tickers)
+    assert merged["AKDITAL"] == "XXX"

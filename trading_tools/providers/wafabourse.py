@@ -16,12 +16,15 @@ import requests
 
 from ..config import DEFAULT_HEADERS, REQUEST_TIMEOUT, WAFABOURSE_API
 from .ammc_calendar import (
+    build_runtime_issuer_map,
     fetch_earnings_calendar,
     fetch_regulatory_filings,
     load_issuer_map,
 )
+from .bam import BamMacroClient
 from .base import DataProvider
 from .news_rss import build_sentiment_snapshot, fetch_news_articles
+from .world_bank import WorldBankCommodityClient
 from .yahoo import YahooMarketDataClient, latest_and_change
 
 log = logging.getLogger(__name__)
@@ -36,7 +39,11 @@ class WafaBourseProvider(DataProvider):
         self.session = requests.Session()
         self.headers = DEFAULT_HEADERS.copy()
         self._yahoo = YahooMarketDataClient(self.session, REQUEST_TIMEOUT)
-        self._issuer_map = load_issuer_map()
+        self._bam = BamMacroClient(self.session, REQUEST_TIMEOUT)
+        self._world_bank = WorldBankCommodityClient(self.session, REQUEST_TIMEOUT)
+        self._static_issuer_map = load_issuer_map()
+        self._issuer_map = self._static_issuer_map
+        self._issuer_map_built = False
 
     def _request(
         self,
@@ -169,23 +176,41 @@ class WafaBourseProvider(DataProvider):
         )
 
     def get_macro_snapshot(self) -> Optional[Dict[str, Any]]:
-        """
-        Macro series are not exposed by WafaBourse endpoints used by this provider.
+        bam = self._bam.fetch_snapshot()
+        warnings: List[str] = list(bam.get("warnings") or [])
 
-        Return a structured placeholder so upper layers can surface a clean
-        warning instead of hard-failing while dedicated BAM/HCP/market-data
-        sources are wired.
-        """
+        # T-bill yields live on a separate BAM secondary-market page that
+        # times out intermittently. Flag and leave null rather than fake.
+        warnings.append(
+            "t_bill_yields source not yet wired; use /Marche-secondaire/Taux-de-reference"
+        )
+        # WafaBourse MASI payload does not expose dividend yield.
+        warnings.append("masi_dividend_yield source not exposed by wafabourse index payload")
+
+        policy_rate = bam.get("policy_rate_pct")
+        cpi = bam.get("cpi_yoy_pct")
+
+        # ERP proxied against the policy rate until T-bill wiring lands.
+        # Surfaced null here because MASI DY is unavailable from the current provider.
+        erp = None
+
+        as_of_candidates = [
+            bam.get("policy_rate_as_of"),
+            bam.get("cpi_as_of"),
+            bam.get("fx_as_of"),
+        ]
+        as_of = max((d for d in as_of_candidates if d), default=None)
+
         return {
-            "policy_rate_pct": None,
+            "policy_rate_pct": policy_rate,
             "t_bill_13w_pct": None,
             "t_bill_52w_pct": None,
-            "cpi_yoy_pct": None,
+            "cpi_yoy_pct": cpi,
             "masi_dividend_yield_pct": None,
-            "equity_risk_premium_pct": None,
-            "as_of": None,
-            "warnings": ["macro snapshot source not configured for wafabourse provider"],
-            "source": "wafabourse",
+            "equity_risk_premium_pct": erp,
+            "as_of": as_of,
+            "warnings": warnings,
+            "source": "bam_scrape",
         }
 
     def get_fx_rates(self) -> Optional[Dict[str, Any]]:
@@ -196,6 +221,22 @@ class WafaBourseProvider(DataProvider):
         eur_spot, eur_change, eur_as_of = latest_and_change(eur_points, 20)
 
         warnings: List[str] = []
+        source = "yahoo_finance"
+
+        # BAM fallback for spot only — keeps the tool useful when Yahoo is blocked
+        # or returns nothing. 20-day change remains null in that case; we do not
+        # fabricate it from a BAM spot alone.
+        if usd_spot is None or eur_spot is None:
+            bam = self._bam.fetch_snapshot()
+            if usd_spot is None and bam.get("usd_mad_spot") is not None:
+                usd_spot = bam.get("usd_mad_spot")
+                usd_as_of = bam.get("fx_as_of")
+                source = "yahoo_finance+bam_scrape"
+            if eur_spot is None and bam.get("eur_mad_spot") is not None:
+                eur_spot = bam.get("eur_mad_spot")
+                eur_as_of = bam.get("fx_as_of")
+                source = "yahoo_finance+bam_scrape"
+
         if usd_spot is None:
             warnings.append("missing USD/MAD spot")
         if eur_spot is None:
@@ -212,7 +253,7 @@ class WafaBourseProvider(DataProvider):
             "eur_mad_20d_change_pct": eur_change,
             "as_of": max([d for d in [usd_as_of, eur_as_of] if d], default=None),
             "warnings": warnings,
-            "source": "yahoo_finance",
+            "source": source,
         }
 
     def get_commodity_prices(self) -> Optional[Dict[str, Any]]:
@@ -221,16 +262,21 @@ class WafaBourseProvider(DataProvider):
 
         brent, brent_chg, brent_as_of = latest_and_change(brent_series, 30)
         gold, gold_chg, gold_as_of = latest_and_change(gold_series, 30)
-        phosphate = None
-        phosphate_chg = None
-        phosphate_as_of = None
+        phosphate, phosphate_chg, phosphate_as_of = self._world_bank.phosphate_rock_latest()
 
         warnings: List[str] = []
         if brent is None:
             warnings.append("missing Brent series")
         if gold is None:
             warnings.append("missing Gold series")
-        warnings.append("missing phosphate rock direct Yahoo symbol; field left null")
+        if phosphate is None:
+            warnings.append("missing phosphate series (world bank pink sheet unavailable)")
+        else:
+            warnings.append(
+                "phosphate cadence is monthly; 30d_change_pct is month-over-month"
+            )
+
+        source = "yahoo_finance+world_bank" if phosphate is not None else "yahoo_finance"
 
         return {
             "brent_usd_per_bbl": brent,
@@ -244,7 +290,7 @@ class WafaBourseProvider(DataProvider):
                 default=None,
             ),
             "warnings": warnings,
-            "source": "yahoo_finance",
+            "source": source,
         }
 
     def get_news(
@@ -275,12 +321,31 @@ class WafaBourseProvider(DataProvider):
             return None
         return build_sentiment_snapshot(symbol, window_days, news_payload)
 
+    def _ensure_issuer_map(self) -> None:
+        """
+        Lazily expand the static issuer map with the live WafaBourse ticker
+        list on first AMMC-facing call. Done lazily because get_all_tickers()
+        is a network call and the provider is constructed at import time.
+        """
+        if self._issuer_map_built:
+            return
+        self._issuer_map_built = True
+        try:
+            tickers = self.get_all_tickers()
+        except Exception as exc:  # defensive — never block AMMC on this
+            log.warning("issuer_map.tickers_fetch_failed", extra={"error": str(exc)})
+            return
+        if not tickers:
+            return
+        self._issuer_map = build_runtime_issuer_map(self._static_issuer_map, tickers)
+
     def get_earnings_calendar(
         self,
         symbol: str,
         *,
         lookahead_days: int = 365,
     ) -> Optional[Dict[str, Any]]:
+        self._ensure_issuer_map()
         return fetch_earnings_calendar(
             symbol,
             lookahead_days=lookahead_days,
@@ -294,6 +359,7 @@ class WafaBourseProvider(DataProvider):
         lookback_days: int = 365,
         limit: int = 20,
     ) -> Optional[Dict[str, Any]]:
+        self._ensure_issuer_map()
         return fetch_regulatory_filings(
             symbol,
             lookback_days=lookback_days,

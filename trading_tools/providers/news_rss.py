@@ -17,9 +17,18 @@ import requests
 log = logging.getLogger(__name__)
 
 
+# Curl-validated RSS feeds (HTTP 200, application/rss+xml) covering Moroccan
+# financial/business press. Sites named in the roadmap that do NOT publish RSS
+# — leconomiste.com, fnh.ma, boursenews.ma, lematin.ma — are deliberately
+# omitted: probing returned 404 or the site homepage. Re-verify with curl
+# before adding.
 _FEEDS: tuple[tuple[str, str], ...] = (
     ("medias24", "https://medias24.com/feed/"),
     ("lavieeco", "https://www.lavieeco.com/feed/"),
+    ("leseco", "https://leseco.ma/feed/"),
+    ("lesiteinfo", "https://www.lesiteinfo.com/feed/"),
+    ("aujourdhui", "https://aujourdhui.ma/feed"),
+    ("mapnews", "https://www.mapnews.ma/fr/rss.xml"),
 )
 
 
@@ -117,15 +126,29 @@ def _word_boundary_contains(haystack: str, needle: str) -> bool:
     return re.search(pattern, haystack) is not None
 
 
+_INGESTION_MAP_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "ingestion"
+    / "mappings"
+    / "issuer_symbols.json"
+)
+_NEWS_ALIASES_PATH = (
+    Path(__file__).resolve().parent.parent / "mappings" / "news_aliases.json"
+)
+
+
 def _load_symbol_aliases() -> Dict[str, Set[str]]:
-    path = Path(__file__).resolve().parent.parent.parent / "ingestion" / "mappings" / "issuer_symbols.json"
     aliases_by_symbol: Dict[str, Set[str]] = {}
 
+    # Ingestion map: issuer-name -> symbol (legal-entity names).
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads(_INGESTION_MAP_PATH.read_text(encoding="utf-8"))
     except Exception as exc:
-        log.warning("news.aliases_load_failed", extra={"error": str(exc), "path": str(path)})
-        return {}
+        log.warning(
+            "news.aliases_load_failed",
+            extra={"error": str(exc), "path": str(_INGESTION_MAP_PATH)},
+        )
+        raw = {}
 
     for issuer_name, symbol in raw.items():
         if issuer_name.startswith("_"):
@@ -135,6 +158,29 @@ def _load_symbol_aliases() -> Dict[str, Set[str]]:
             continue
         aliases_by_symbol.setdefault(sym, set()).add(_normalize(issuer_name))
         aliases_by_symbol[sym].add(_normalize(sym))
+
+    # News aliases: symbol -> [press-short-names]. Additive.
+    try:
+        news_raw = json.loads(_NEWS_ALIASES_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:
+        log.warning(
+            "news.aliases_news_load_failed",
+            extra={"error": str(exc), "path": str(_NEWS_ALIASES_PATH)},
+        )
+        news_raw = {}
+
+    for symbol, names in news_raw.items():
+        if symbol.startswith("_"):
+            continue
+        sym = str(symbol).strip().upper()
+        if not sym or not isinstance(names, list):
+            continue
+        bucket = aliases_by_symbol.setdefault(sym, set())
+        bucket.add(_normalize(sym))
+        for name in names:
+            normalized = _normalize(str(name))
+            if normalized:
+                bucket.add(normalized)
 
     return aliases_by_symbol
 
