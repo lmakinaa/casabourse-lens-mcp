@@ -258,6 +258,26 @@ def test_intraday_momentum(tools, parse_json):
     assert "order_book_imbalance_pct" in out["pressure_analysis"]
 
 
+def test_orderflow_imbalance(tools, parse_json):
+    out = parse_json(tools.execute_tool("analyze_orderflow_imbalance", {"symbol": "TEST"}))
+    assert out["symbol"] == "TEST"
+    assert out["classification"]["method"] == "lee_ready_quote_then_tick"
+    assert out["classification"]["reference_mid"] == 110.0
+    flow = out["flow"]
+    quality = out["quality"]
+    assert flow["buy_volume"] == 350
+    assert flow["sell_volume"] == 90
+    assert flow["net_flow"] == "BUYING_PRESSURE"
+    assert flow["volume_imbalance_pct"] == 59.09
+    assert quality["classification_coverage_pct"] == 81.48
+    assert quality["trades_total"] == 5
+
+
+def test_correlation_matrix_requires_ca_service(tools):
+    out = tools.execute_tool("get_correlation_matrix", {"symbols": ["AAA", "BBB"]})
+    assert "corporate-action service not configured" in out
+
+
 def test_macro_snapshot(tools, parse_json):
     out = parse_json(tools.execute_tool("get_macro_snapshot", {}))
     assert out["source"] == "fake_macro"

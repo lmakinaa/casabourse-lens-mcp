@@ -225,6 +225,49 @@ def test_get_adjusted_price_history_without_service_returns_error():
     assert "Error" in out
 
 
+# ── get_correlation_matrix ────────────────────────────────────
+
+
+def test_get_correlation_matrix_returns_square_matrix(ca_service):
+    class DivergentUpstream(FakeUpstream):
+        def get_price_history(self, symbol: str):
+            base = list(self.history)
+            if symbol == "BBB":
+                return [
+                    {**row, "Cours": base[-(i + 1)]["Cours"]}
+                    for i, row in enumerate(base)
+                ]
+            return base
+
+    tools = TradingTools(DivergentUpstream(), TechnicalAnalysis(), ca_service)
+    out = json.loads(
+        tools.execute_tool(
+            "get_correlation_matrix",
+            {"symbols": ["AAA", "BBB", "CCC"], "window_days": 30},
+        )
+    )
+
+    assert out["symbols"] == ["AAA", "BBB", "CCC"]
+    assert out["window_days"] == 30
+    assert out["method"] == "pearson_log_returns_adjusted"
+    matrix = out["correlation_matrix"]
+    points = out["points_matrix"]
+
+    for left in out["symbols"]:
+        assert set(matrix[left].keys()) == set(out["symbols"])
+        assert set(points[left].keys()) == set(out["symbols"])
+        assert matrix[left][left] == 1.0
+
+    assert matrix["AAA"]["BBB"] < 0
+    assert points["AAA"]["BBB"] >= 2
+
+
+def test_get_correlation_matrix_without_service_returns_error():
+    tools = TradingTools(FakeUpstream(), TechnicalAnalysis(), corporate_actions=None)
+    out = tools.execute_tool("get_correlation_matrix", {"symbols": ["AAA", "BBB"]})
+    assert "Error" in out
+
+
 # ── ingestion → tool round-trip ───────────────────────────────
 
 
