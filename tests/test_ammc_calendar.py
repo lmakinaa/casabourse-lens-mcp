@@ -46,6 +46,19 @@ SAMPLE_REGULATORY = """
 </html>
 """
 
+SAMPLE_ISSUER_PROFILE = """
+<html>
+    <body>
+        <time datetime="2026-04-11T09:00:00Z">11/04/2026</time>
+        <span class="field-content">L'AMMC met sur son site internet les publications réalisées par les émetteurs</span>
+        <a href="/sites/default/files/AKT_CP_2026.pdf">AKT_CP_2026.pdf</a>
+        <time datetime="2026-04-10T09:15:00Z">10/04/2026</time>
+        <span class="field-content">Note d'information relative à l'OPR</span>
+        <a href="/sites/default/files/AKT_OPR_2026.pdf">AKT_OPR_2026.pdf</a>
+    </body>
+</html>
+"""
+
 
 @dataclass
 class _Response:
@@ -66,6 +79,8 @@ class _Client:
         return None
 
     def get(self, url: str):
+        if "societes-cotees/akdital" in url:
+            return _Response(SAMPLE_ISSUER_PROFILE)
         if "actualites" in url:
             return _Response(SAMPLE_REGULATORY)
         if "communiques-presse-emetteurs" in url:
@@ -145,6 +160,29 @@ def test_fetch_regulatory_filings_extracts_event_risk_items(monkeypatch):
     }
 
 
+def test_fetch_earnings_calendar_infers_symbol_without_mapping(monkeypatch):
+    # No issuer map available; symbol should still be inferred from PDF/link token ATL.
+    monkeypatch.setattr(ammc_calendar.httpx, "Client", _Client)
+
+    out = ammc_calendar.fetch_earnings_calendar("ATL", issuer_map={})
+
+    assert out["symbol"] == "ATL"
+    assert out["coverage"]["matched_items"] >= 1
+    assert any(e["symbol"] == "ATL" for e in out["events"])
+    assert any(w.startswith("issuer_inferred_from_symbol:") for w in out["warnings"])
+
+
+def test_fetch_regulatory_filings_infers_symbol_without_mapping(monkeypatch):
+    monkeypatch.setattr(ammc_calendar.httpx, "Client", _Client)
+
+    out = ammc_calendar.fetch_regulatory_filings("ATL", issuer_map={})
+
+    assert out["symbol"] == "ATL"
+    assert out["filing_count"] >= 1
+    assert all(row["symbol"] == "ATL" for row in out["filings"])
+    assert any(w.startswith("issuer_inferred_from_symbol:") for w in out["warnings"])
+
+
 def test_build_runtime_issuer_map_adds_libelle_variants():
     static_map = {"AKDITAL": "AKT"}
     tickers = [
@@ -180,3 +218,55 @@ def test_build_runtime_issuer_map_static_takes_precedence():
 
     merged = ammc_calendar.build_runtime_issuer_map(static_map, tickers)
     assert merged["AKDITAL"] == "XXX"
+
+
+def test_extract_symbol_handles_spacing_punctuation_variants():
+    issuer_map = {
+        "ATLANTASANAD": "ATL",
+        "ATTIJARIWAFA BANK": "ATW",
+    }
+
+    assert ammc_calendar._extract_symbol("Atlanta Sanad", issuer_map) == "ATL"
+    assert ammc_calendar._extract_symbol("Atlanta-Sanad", issuer_map) == "ATL"
+    assert ammc_calendar._extract_symbol("Attijariwafa Bank S.A.", issuer_map) == "ATW"
+
+
+def test_build_runtime_slug_map_from_tickers():
+    static_slug_map = {"IAM": "itissalat-al-maghrib"}
+    tickers = [
+        {"Symbol": "AKT", "Libelle": "AKDITAL GROUP S.A."},
+        {"Symbol": "BCP", "Libelle": "BANQUE CENTRALE POPULAIRE"},
+    ]
+
+    merged = ammc_calendar.build_runtime_slug_map(static_slug_map, tickers)
+    assert merged["IAM"] == "itissalat-al-maghrib"
+    assert merged["AKT"] == "akdital-group"
+    assert merged["BCP"] == "banque-centrale-populaire"
+
+
+def test_fetch_earnings_calendar_uses_issuer_slug_page(monkeypatch):
+    monkeypatch.setattr(ammc_calendar.httpx, "Client", _Client)
+
+    out = ammc_calendar.fetch_earnings_calendar(
+        "AKT",
+        issuer_map={},
+        issuer_slug_map={"AKT": "akdital"},
+    )
+
+    assert out["symbol"] == "AKT"
+    assert out["coverage"]["pages_retrieved"].get("issuer_profile") == 1
+    assert out["coverage"]["matched_items"] >= 1
+
+
+def test_fetch_regulatory_filings_uses_issuer_slug_page(monkeypatch):
+    monkeypatch.setattr(ammc_calendar.httpx, "Client", _Client)
+
+    out = ammc_calendar.fetch_regulatory_filings(
+        "AKT",
+        issuer_map={},
+        issuer_slug_map={"AKT": "akdital"},
+    )
+
+    assert out["symbol"] == "AKT"
+    assert out["coverage"]["pages_retrieved"].get("issuer_profile") == 1
+    assert out["filing_count"] >= 1

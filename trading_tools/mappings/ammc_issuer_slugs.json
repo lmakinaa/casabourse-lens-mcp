@@ -1,0 +1,8 @@
+{
+  "_comment": "Static AMMC issuer slug mapping (symbol -> slug under /fr/espace-emetteurs/societes-cotees/{slug}). Runtime inference from Wafa Libelle fills missing symbols.",
+  "AKT": "akdital",
+  "IAM": "itissalat-al-maghrib",
+  "BCP": "banque-centrale-populaire",
+  "MNG": "managem",
+  "ATW": "attijariwafa-bank"
+}

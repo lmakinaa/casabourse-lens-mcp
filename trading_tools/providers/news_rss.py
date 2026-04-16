@@ -27,7 +27,6 @@ _FEEDS: tuple[tuple[str, str], ...] = (
     ("lavieeco", "https://www.lavieeco.com/feed/"),
     ("leseco", "https://leseco.ma/feed/"),
     ("lesiteinfo", "https://www.lesiteinfo.com/feed/"),
-    ("aujourdhui", "https://aujourdhui.ma/feed"),
     ("mapnews", "https://www.mapnews.ma/fr/rss.xml"),
 )
 

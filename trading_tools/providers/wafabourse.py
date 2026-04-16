@@ -17,9 +17,11 @@ import requests
 from ..config import DEFAULT_HEADERS, REQUEST_TIMEOUT, WAFABOURSE_API
 from .ammc_calendar import (
     build_runtime_issuer_map,
+    build_runtime_slug_map,
     fetch_earnings_calendar,
     fetch_regulatory_filings,
     load_issuer_map,
+    load_issuer_slug_map,
 )
 from .bam import BamMacroClient
 from .base import DataProvider
@@ -42,7 +44,9 @@ class WafaBourseProvider(DataProvider):
         self._bam = BamMacroClient(self.session, REQUEST_TIMEOUT)
         self._world_bank = WorldBankCommodityClient(self.session, REQUEST_TIMEOUT)
         self._static_issuer_map = load_issuer_map()
+        self._static_issuer_slug_map = load_issuer_slug_map()
         self._issuer_map = self._static_issuer_map
+        self._issuer_slug_map = self._static_issuer_slug_map
         self._issuer_map_built = False
 
     def _request(
@@ -338,6 +342,7 @@ class WafaBourseProvider(DataProvider):
         if not tickers:
             return
         self._issuer_map = build_runtime_issuer_map(self._static_issuer_map, tickers)
+        self._issuer_slug_map = build_runtime_slug_map(self._static_issuer_slug_map, tickers)
 
     def get_earnings_calendar(
         self,
@@ -350,6 +355,7 @@ class WafaBourseProvider(DataProvider):
             symbol,
             lookahead_days=lookahead_days,
             issuer_map=self._issuer_map,
+            issuer_slug_map=self._issuer_slug_map,
         )
 
     def get_regulatory_filings(
@@ -365,4 +371,5 @@ class WafaBourseProvider(DataProvider):
             lookback_days=lookback_days,
             limit=limit,
             issuer_map=self._issuer_map,
+            issuer_slug_map=self._issuer_slug_map,
         )

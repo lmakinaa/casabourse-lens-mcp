@@ -49,6 +49,7 @@ def build_mcp_tools(tool_defs: list) -> list[types.Tool]:
 
 
 def main():
+    print("Starting Casabourse Lens MCP Server V2...")
     provider = CachingDataProvider(WafaBourseProvider())
     ca_store = CorporateActionStore(CA_DB_PATH)
     ca_service = CorporateActionService(ca_store)

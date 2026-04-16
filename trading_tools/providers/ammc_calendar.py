@@ -74,6 +74,7 @@ _MONTHS = {
 }
 
 _DEFAULT_MAPPING_PATH = Path(__file__).resolve().parent.parent.parent / "ingestion" / "mappings" / "issuer_symbols.json"
+_DEFAULT_SLUG_MAPPING_PATH = Path(__file__).resolve().parent.parent / "mappings" / "ammc_issuer_slugs.json"
 
 _TENDER_OFFER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bOPA\b", re.I),
@@ -139,6 +140,15 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^A-Z0-9' ]+", " ", upper).strip()
 
 
+def _canonical(text: str) -> str:
+    """Compact normalization for fuzzy issuer matching.
+
+    Removes spaces/punctuation so variants like "Atlanta Sanad",
+    "ATLANTASANAD", "Atlanta-Sanad" map to the same canonical form.
+    """
+    return re.sub(r"[^A-Z0-9]+", "", _normalize(text))
+
+
 class AmmcScraperError(RuntimeError):
     pass
 
@@ -155,6 +165,29 @@ def load_issuer_map(path: Optional[Path] = None) -> Dict[str, str]:
     return out
 
 
+def load_issuer_slug_map(path: Optional[Path] = None) -> Dict[str, str]:
+    """Load static symbol -> AMMC issuer slug mapping.
+
+    Missing file is allowed; we return an empty map and rely on runtime
+    slug inference from ticker Libellé values.
+    """
+    path = path or _DEFAULT_SLUG_MAPPING_PATH
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError:
+        return {}
+    out: Dict[str, str] = {}
+    for key, value in raw.items():
+        if str(key).startswith("_"):
+            continue
+        symbol = str(key).strip().upper()
+        slug = str(value).strip().lower().strip("/")
+        if symbol and slug:
+            out[symbol] = slug
+    return out
+
+
 _LEGAL_SUFFIXES: tuple[str, ...] = (
     " SA",
     " S A",
@@ -164,6 +197,15 @@ _LEGAL_SUFFIXES: tuple[str, ...] = (
     " GROUPE",
     " HOLDING",
 )
+
+
+def _slugify(text: str) -> str:
+    folded = unicodedata.normalize("NFKD", text or "")
+    no_marks = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    lowered = no_marks.lower()
+    lowered = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+    lowered = re.sub(r"-+", "-", lowered)
+    return lowered
 
 
 def build_runtime_issuer_map(
@@ -203,6 +245,44 @@ def build_runtime_issuer_map(
             if not normalized:
                 continue
             merged.setdefault(normalized, symbol)
+
+    return merged
+
+
+def build_runtime_slug_map(
+    static_slug_map: Dict[str, str],
+    tickers: Optional[Iterable[Dict[str, Any]]],
+) -> Dict[str, str]:
+    """Expand static symbol->slug map using live ticker Libellé values."""
+    merged: Dict[str, str] = dict(static_slug_map)
+    if not tickers:
+        return merged
+
+    for row in tickers:
+        if not isinstance(row, dict):
+            continue
+        symbol_raw = row.get("Symbol")
+        libelle_raw = row.get("Libelle")
+        if not symbol_raw or not libelle_raw:
+            continue
+        symbol = str(symbol_raw).strip().upper()
+        libelle = str(libelle_raw).strip()
+        if not symbol or not libelle:
+            continue
+
+        # Respect explicit static slugs; only infer missing ones.
+        if symbol in merged:
+            continue
+
+        candidate = libelle
+        upper = libelle.upper()
+        for suffix in _LEGAL_SUFFIXES:
+            if upper.endswith(suffix):
+                candidate = libelle[: len(libelle) - len(suffix)].strip()
+                break
+        slug = _slugify(candidate)
+        if slug:
+            merged[symbol] = slug
 
     return merged
 
@@ -338,11 +418,48 @@ def _parse_published_at(raw: str) -> datetime:
 
 def _extract_symbol(issuer_raw: str, issuer_map: Dict[str, str]) -> Optional[str]:
     normalized = _normalize(issuer_raw)
+    canonical = _canonical(issuer_raw)
+
     if normalized in issuer_map:
         return issuer_map[normalized]
+
+    # Try canonical exact/containment matches to absorb whitespace and
+    # punctuation drift between AMMC labels and curated issuer mapping.
+    canonical_matches: list[str] = []
+    for issuer_name, symbol in issuer_map.items():
+        issuer_canonical = _canonical(issuer_name)
+        if not issuer_canonical:
+            continue
+        if canonical == issuer_canonical:
+            return symbol
+        if canonical and (canonical in issuer_canonical or issuer_canonical in canonical):
+            canonical_matches.append(symbol)
+
+    if len(set(canonical_matches)) == 1:
+        return canonical_matches[0]
+
     for issuer_name, symbol in issuer_map.items():
         if normalized.startswith(issuer_name) or issuer_name.startswith(normalized):
             return symbol
+
+    # Final heuristic: token-overlap score (kept conservative).
+    raw_tokens = {t for t in normalized.split(" ") if t}
+    best_symbol: Optional[str] = None
+    best_score = 0.0
+    for issuer_name, symbol in issuer_map.items():
+        map_tokens = {t for t in issuer_name.split(" ") if t}
+        if not raw_tokens or not map_tokens:
+            continue
+        overlap = len(raw_tokens & map_tokens)
+        if overlap == 0:
+            continue
+        score = overlap / float(max(len(raw_tokens), len(map_tokens)))
+        if score > best_score:
+            best_score = score
+            best_symbol = symbol
+    if best_symbol is not None and best_score >= 0.6:
+        return best_symbol
+
     return None
 
 
@@ -353,6 +470,35 @@ def _extract_symbol_from_text(text: str, issuer_map: Dict[str, str]) -> Optional
     for issuer_name, symbol in issuer_map.items():
         if issuer_name in normalized:
             return symbol
+    return None
+
+
+def _mentions_symbol(text: Optional[str], symbol: str) -> bool:
+    if not text or not symbol:
+        return False
+    normalized_text = _normalize(text)
+    normalized_symbol = _normalize(symbol)
+    if not normalized_text or not normalized_symbol:
+        return False
+    pattern = rf"(^| )" + re.escape(normalized_symbol) + rf"( |$)"
+    return re.search(pattern, normalized_text) is not None
+
+
+def _infer_symbol_from_item(raw_item: Dict[str, Any], requested_symbol: str) -> Optional[str]:
+    requested = requested_symbol.strip().upper()
+    if not requested:
+        return None
+    # If AMMC title/links embed the ticker (common in PDF names such as
+    # PEG_ATL_007_2026.pdf), honor the requested symbol even when issuer
+    # mapping is missing.
+    fields = (
+        raw_item.get("issuer_raw"),
+        raw_item.get("title"),
+        raw_item.get("pdf_url"),
+        raw_item.get("detail_url"),
+    )
+    if any(_mentions_symbol(str(field), requested) for field in fields if field):
+        return requested
     return None
 
 
@@ -377,6 +523,7 @@ def fetch_earnings_calendar(
     limit: int = 5,
     timeout: float = 20.0,
     issuer_map: Optional[Dict[str, str]] = None,
+    issuer_slug_map: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     Pull AMMC issuer-publication listings and return the next known
@@ -388,12 +535,25 @@ def fetch_earnings_calendar(
     symbol_u = symbol.strip().upper()
     lookahead_days = max(1, min(int(lookahead_days), 730))
     limit = max(1, min(int(limit), 20))
-    issuer_map = issuer_map or load_issuer_map()
+    if issuer_map is None:
+        issuer_map = load_issuer_map()
+    if issuer_slug_map is None:
+        issuer_slug_map = load_issuer_slug_map()
 
     warnings: list[str] = []
     today = date.today()
 
-    pages = list(_AMMC_PAGES)
+    pages: list[tuple[str, str]] = []
+    slug = (issuer_slug_map.get(symbol_u) or "").strip().strip("/")
+    if slug:
+        pages.append(
+            (
+                "issuer_profile",
+                f"https://www.ammc.ma/fr/espace-emetteurs/societes-cotees/{slug}",
+            )
+        )
+
+    pages.extend(_AMMC_PAGES)
     # The financial-statements listing is particularly useful for calendar events.
     pages.append(("issuer_financial_statements", "https://www.ammc.ma/fr/liste-etats-financiers-emetteurs"))
 
@@ -425,10 +585,20 @@ def fetch_earnings_calendar(
             source_counts[page_key] = source_counts.get(page_key, 0) + 1
             page_items = _parse_html_page(page_key, response.text, url)
             for raw_item in page_items:
-                issuer_symbol = _extract_symbol(raw_item["issuer_raw"], issuer_map)
+                issuer_symbol: Optional[str]
+                if page_key == "issuer_profile":
+                    issuer_symbol = symbol_u
+                else:
+                    issuer_symbol = _extract_symbol(raw_item["issuer_raw"], issuer_map)
                 if issuer_symbol is None:
-                    warnings.append(f"unmapped_issuer:{raw_item['issuer_raw']}")
-                    continue
+                    inferred_symbol = _infer_symbol_from_item(raw_item, symbol_u)
+                    if inferred_symbol is None:
+                        warnings.append(f"unmapped_issuer:{raw_item['issuer_raw']}")
+                        continue
+                    issuer_symbol = inferred_symbol
+                    warnings.append(f"issuer_inferred_from_symbol:{raw_item['issuer_raw']}")
+                elif page_key == "issuer_profile":
+                    warnings.append("issuer_assumed_from_slug_page")
 
                 published_at = _parse_published_at(raw_item["published_at"])
                 event_date = _parse_date_fragment(raw_item["title"]) or published_at.date()
@@ -480,7 +650,7 @@ def fetch_earnings_calendar(
             "pages_retrieved": source_counts,
             "matched_items": len(matching),
         },
-        "warnings": warnings,
+        "warnings": sorted(set(warnings)) if warnings else ([] if matching else ["no_events_matched_symbol"]),
         "events": [item.to_dict() for item in next_items],
     }
 
@@ -492,6 +662,7 @@ def fetch_regulatory_filings(
     limit: int = 20,
     timeout: float = 20.0,
     issuer_map: Optional[Dict[str, str]] = None,
+    issuer_slug_map: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     Pull AMMC pages and return regulatory filing notices for a symbol.
@@ -504,7 +675,10 @@ def fetch_regulatory_filings(
     symbol_u = symbol.strip().upper()
     lookback_days = max(1, min(int(lookback_days), 730))
     limit = max(1, min(int(limit), 100))
-    issuer_map = issuer_map or load_issuer_map()
+    if issuer_map is None:
+        issuer_map = load_issuer_map()
+    if issuer_slug_map is None:
+        issuer_slug_map = load_issuer_slug_map()
 
     warnings: list[str] = []
     today = date.today()
@@ -513,6 +687,17 @@ def fetch_regulatory_filings(
     source_counts: Dict[str, int] = {}
     filings: list[dict[str, Any]] = []
     seen: set[tuple[str, str, Optional[str]]] = set()
+
+    pages: list[tuple[str, str]] = []
+    slug = (issuer_slug_map.get(symbol_u) or "").strip().strip("/")
+    if slug:
+        pages.append(
+            (
+                "issuer_profile",
+                f"https://www.ammc.ma/fr/espace-emetteurs/societes-cotees/{slug}",
+            )
+        )
+    pages.extend(_AMMC_REGULATORY_PAGES)
 
     ssl_context = _build_ssl_context(_default_extra_ca_files())
     with httpx.Client(
@@ -524,7 +709,7 @@ def fetch_regulatory_filings(
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
     ) as client:
-        for page_key, url in _AMMC_REGULATORY_PAGES:
+        for page_key, url in pages:
             try:
                 response = client.get(url)
                 response.raise_for_status()
@@ -542,12 +727,21 @@ def fetch_regulatory_filings(
                 if filing_type is None:
                     continue
 
-                item_symbol = _extract_symbol(raw_item["issuer_raw"], issuer_map)
+                if page_key == "issuer_profile":
+                    item_symbol = symbol_u
+                else:
+                    item_symbol = _extract_symbol(raw_item["issuer_raw"], issuer_map)
                 if item_symbol is None:
                     item_symbol = _extract_symbol_from_text(raw_item["title"], issuer_map)
                 if item_symbol is None:
-                    warnings.append(f"unmapped_issuer:{raw_item['issuer_raw']}")
-                    continue
+                    inferred_symbol = _infer_symbol_from_item(raw_item, symbol_u)
+                    if inferred_symbol is None:
+                        warnings.append(f"unmapped_issuer:{raw_item['issuer_raw']}")
+                        continue
+                    item_symbol = inferred_symbol
+                    warnings.append(f"issuer_inferred_from_symbol:{raw_item['issuer_raw']}")
+                elif page_key == "issuer_profile":
+                    warnings.append("issuer_assumed_from_slug_page")
                 if item_symbol != symbol_u:
                     continue
 
@@ -588,10 +782,10 @@ def fetch_regulatory_filings(
         "filing_count": len(filings),
         "latest_filing_date": filings[0]["published_date"] if filings else None,
         "coverage": {
-            "pages_checked": [page for page, _ in _AMMC_REGULATORY_PAGES],
+            "pages_checked": [page for page, _ in pages],
             "pages_retrieved": source_counts,
             "matched_items": len(filings),
         },
-        "warnings": warnings,
+        "warnings": sorted(set(warnings)) if warnings else ([] if filings else ["no_filings_matched_symbol"]),
         "filings": filings,
     }
