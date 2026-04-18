@@ -60,6 +60,8 @@ Tools to add next, ranked by impact on recommendation quality.
 	- cache class + provider contract wired (`REGULATORY_FILINGS`)
 	- tests added for classification rules, extraction, tool contract, and cache behavior
 
+**Note:** AMMC-derived tools (`get_earnings_calendar`, `get_regulatory_filings`) are temporarily disabled in the runtime tool registry due to issuer-slug/mapping correctness issues; they remain implemented in code and the static slug map is available under `trading_tools/mappings/ammc_issuer_slugs.json`. Re-enable when slug mappings are verified.
+
 ## Suggested Build Order
 
 Build in this sequence for maximum recommendation-quality gain per unit of work:
