@@ -4,6 +4,8 @@ Configuration settings for trading tools
 
 # WafaBourse API Configuration
 WAFABOURSE_API = "https://www.wafabourse.com/api/proxy/data/JNNJ"
+WAFABOURSE_TOKEN_API = "https://www.wafabourse.com/api/proxy/token"
+WAFABOURSE_TOKEN_REFRESH_MARGIN_SEC = 5
 
 # Default request headers
 DEFAULT_HEADERS = {

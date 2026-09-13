@@ -9,12 +9,20 @@ above this layer should import requests or reference WafaBourse.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from datetime import date
 from typing import Any, Dict, List, Optional
 
 import requests
 
-from ..config import DEFAULT_HEADERS, REQUEST_TIMEOUT, WAFABOURSE_API
+from ..config import (
+    DEFAULT_HEADERS,
+    REQUEST_TIMEOUT,
+    WAFABOURSE_API,
+    WAFABOURSE_TOKEN_API,
+    WAFABOURSE_TOKEN_REFRESH_MARGIN_SEC,
+)
 from .ammc_calendar import (
     build_runtime_issuer_map,
     build_runtime_slug_map,
@@ -48,14 +56,55 @@ class WafaBourseProvider(DataProvider):
         self._issuer_map = self._static_issuer_map
         self._issuer_slug_map = self._static_issuer_slug_map
         self._issuer_map_built = False
+        self._proxy_token: Optional[str] = None
+        self._proxy_token_expires_at: float = 0.0
+        self._proxy_token_lock = threading.Lock()
+
+    def _get_proxy_token(self, *, force_refresh: bool = False) -> Optional[str]:
+        now = time.monotonic()
+        if not force_refresh and self._proxy_token and now < self._proxy_token_expires_at:
+            return self._proxy_token
+        with self._proxy_token_lock:
+            now = time.monotonic()
+            if not force_refresh and self._proxy_token and now < self._proxy_token_expires_at:
+                return self._proxy_token
+            try:
+                response = self.session.get(
+                    WAFABOURSE_TOKEN_API,
+                    headers=self.headers,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                payload = response.json()
+                token = payload.get("token") if isinstance(payload, dict) else None
+                expires_in = payload.get("expiresIn") if isinstance(payload, dict) else None
+                if not token or not isinstance(expires_in, (int, float)):
+                    log.warning(
+                        "wafabourse.token_invalid_response",
+                        extra={"payload_keys": list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__},
+                    )
+                    return None
+                ttl = max(1.0, float(expires_in) - WAFABOURSE_TOKEN_REFRESH_MARGIN_SEC)
+                self._proxy_token = token
+                self._proxy_token_expires_at = time.monotonic() + ttl
+                return self._proxy_token
+            except Exception as exc:
+                log.error(
+                    "wafabourse.token_fetch_failed",
+                    extra={"error": str(exc)},
+                )
+                return None
 
     def _request(
         self,
         action_name: str,
         params: List[Dict[str, Any]],
         action_type: str = "SELECT",
+        _retried: bool = False,
     ) -> Optional[Any]:
         """Generic WafaBourse action envelope."""
+        token = self._get_proxy_token(force_refresh=_retried)
+        if not token:
+            return None
         payload = {
             "ACTIONS": [
                 {
@@ -67,14 +116,36 @@ class WafaBourseProvider(DataProvider):
         try:
             response = self.session.post(
                 WAFABOURSE_API,
-                headers=self.headers,
+                headers={**self.headers, "x-proxy-token": token},
                 json=payload,
                 timeout=REQUEST_TIMEOUT,
             )
             data = response.json()
-            if data and action_name in data[0] and data[0][action_name].get("Valid"):
+            if isinstance(data, dict) and "error" in data:
+                err_msg = str(data.get("error", ""))
+                is_token_error = response.status_code == 403 or "token" in err_msg.lower()
+                if is_token_error and not _retried:
+                    return self._request(action_name, params, action_type, _retried=True)
+                log.warning(
+                    "wafabourse.error_envelope",
+                    extra={"action": action_name, "status": response.status_code, "error": err_msg},
+                )
+                return None
+            if (
+                isinstance(data, list)
+                and data
+                and action_name in data[0]
+                and data[0][action_name].get("Valid")
+            ):
                 return data[0][action_name]["Data"]
-            log.warning("wafabourse.invalid_response", extra={"action": action_name})
+            shape = type(data).__name__
+            first_keys = list(data[0].keys()) if isinstance(data, list) and data and isinstance(data[0], dict) else (
+                list(data.keys()) if isinstance(data, dict) else None
+            )
+            log.warning(
+                "wafabourse.invalid_response",
+                extra={"action": action_name, "shape": shape, "first_keys": first_keys},
+            )
         except Exception as exc:
             log.error(
                 "wafabourse.request_failed",

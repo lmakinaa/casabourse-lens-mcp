@@ -10,6 +10,7 @@ consumes the DataProvider interface.
 import asyncio
 import logging
 import os
+import sys
 from pathlib import Path
 
 from mcp import types
@@ -30,6 +31,7 @@ from trading_tools.playground import (
     build_client_from_env as build_playground_client,
     register_trading_tools as register_playground_tools,
 )
+from trading_tools.paper_engine import register_paper_tools
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,7 +55,7 @@ def build_mcp_tools(tool_defs: list) -> list[types.Tool]:
 
 
 def main():
-    print("Starting Casabourse Lens MCP Server V2...")
+    print("Starting Casabourse Lens MCP Server V2...", file=sys.stderr)
     provider = CachingDataProvider(WafaBourseProvider())
     ca_store = CorporateActionStore(CA_DB_PATH)
     ca_service = CorporateActionService(ca_store)
@@ -69,6 +71,13 @@ def main():
         logging.getLogger(__name__).info(
             "Playground trading tools registered: %d", count
         )
+
+    # Local paper-engine read tools (always registered — they only read JSON files,
+    # no MCP-side state or credentials needed).
+    paper_count = register_paper_tools()
+    logging.getLogger(__name__).info(
+        "Paper-engine read tools registered: %d", paper_count
+    )
 
     mcp_tool_list = build_mcp_tools(trading_tools.get_tool_definitions())
     server = Server("casabourse-lens")

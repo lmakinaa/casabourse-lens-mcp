@@ -11,6 +11,9 @@ Design notes:
 - Errors from the playground (rejected orders, market closed, insufficient
   funds) surface as `{"error": "..."}` rather than raised exceptions, so the
   MCP client sees a structured response instead of a tool-execution failure.
+- All tools accept an optional `account` parameter. Omit it to target the
+  default account (MASI_API_KEY). Pass a lowercase name like "momentum" to
+  target an additional account registered via MASI_API_KEY_<NAME>.
 """
 
 from __future__ import annotations
@@ -29,6 +32,32 @@ def _err(exc: Exception) -> str:
     return json.dumps({"error": str(exc)})
 
 
+def _account(args: Dict[str, Any]) -> Optional[str]:
+    """Extract the optional `account` parameter from a tool's args.
+
+    Returns None if absent or empty so the client defaults cleanly.
+    """
+    val = args.get("account")
+    if val is None:
+        return None
+    val = str(val).strip().lower()
+    return val or None
+
+
+# Shared schema fragment for the `account` parameter, injected into every
+# playground tool. Keeping it in one place means tweaks (e.g., richer
+# description) propagate uniformly.
+_ACCOUNT_PARAM = {
+    "type": "string",
+    "description": (
+        "Optional name of a non-default playground account, registered via "
+        "MASI_API_KEY_<NAME> env vars on the MCP server. Omit (or pass "
+        "'default') to use the primary account. Example: 'momentum' routes "
+        "to the key in MASI_API_KEY_MOMENTUM."
+    ),
+}
+
+
 def register(client: PlaygroundClient) -> int:
     """Declare tools against the shared registry; return count registered."""
 
@@ -41,11 +70,14 @@ def register(client: PlaygroundClient) -> int:
             "to: username, cash balance, account id. Use this when you need to "
             "confirm which simulator account you are trading as."
         ),
-        parameters={"type": "object", "properties": {}},
+        parameters={
+            "type": "object",
+            "properties": {"account": _ACCOUNT_PARAM},
+        },
     )
-    def _whoami(_ctx: ToolContext, _args: Dict[str, Any]) -> str:
+    def _whoami(_ctx: ToolContext, args: Dict[str, Any]) -> str:
         try:
-            return json.dumps(client.me(), indent=2)
+            return json.dumps(client.me(account=_account(args)), indent=2)
         except Exception as e:
             return _err(e)
 
@@ -58,11 +90,18 @@ def register(client: PlaygroundClient) -> int:
             "quantity, avg cost, current price, unrealized P&L), total value, "
             "and aggregate P&L in MAD and %."
         ),
-        parameters={"type": "object", "properties": {}},
+        parameters={
+            "type": "object",
+            "properties": {"account": _ACCOUNT_PARAM},
+        },
     )
-    def _portfolio(_ctx: ToolContext, _args: Dict[str, Any]) -> str:
+    def _portfolio(_ctx: ToolContext, args: Dict[str, Any]) -> str:
         try:
-            return json.dumps(client.portfolio(), indent=2, default=str)
+            return json.dumps(
+                client.portfolio(account=_account(args)),
+                indent=2,
+                default=str,
+            )
         except Exception as e:
             return _err(e)
 
@@ -81,14 +120,18 @@ def register(client: PlaygroundClient) -> int:
                     "minimum": 1,
                     "maximum": 500,
                     "default": 50,
-                }
+                },
+                "account": _ACCOUNT_PARAM,
             },
         },
     )
     def _trades(_ctx: ToolContext, args: Dict[str, Any]) -> str:
         try:
             return json.dumps(
-                client.trade_history(limit=int(args.get("limit", 50))),
+                client.trade_history(
+                    limit=int(args.get("limit", 50)),
+                    account=_account(args),
+                ),
                 indent=2,
                 default=str,
             )
@@ -111,6 +154,7 @@ def register(client: PlaygroundClient) -> int:
                 "status": {"type": "string"},
                 "symbol": {"type": "string"},
                 "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": 500},
+                "account": _ACCOUNT_PARAM,
             },
         },
     )
@@ -121,6 +165,7 @@ def register(client: PlaygroundClient) -> int:
                     status=args.get("status"),
                     symbol=args.get("symbol"),
                     limit=int(args.get("limit", 50)),
+                    account=_account(args),
                 ),
                 indent=2,
                 default=str,
@@ -133,13 +178,20 @@ def register(client: PlaygroundClient) -> int:
         description="Fetch a single order by id.",
         parameters={
             "type": "object",
-            "properties": {"order_id": {"type": "string"}},
+            "properties": {
+                "order_id": {"type": "string"},
+                "account": _ACCOUNT_PARAM,
+            },
             "required": ["order_id"],
         },
     )
     def _get(_ctx: ToolContext, args: Dict[str, Any]) -> str:
         try:
-            return json.dumps(client.get_order(args["order_id"]), indent=2, default=str)
+            return json.dumps(
+                client.get_order(args["order_id"], account=_account(args)),
+                indent=2,
+                default=str,
+            )
         except Exception as e:
             return _err(e)
 
@@ -172,6 +224,7 @@ def register(client: PlaygroundClient) -> int:
                     "type": "number",
                     "description": "Required when order_type=LIMIT. Omit for MARKET.",
                 },
+                "account": _ACCOUNT_PARAM,
             },
             "required": ["symbol", "side", "quantity"],
         },
@@ -190,6 +243,7 @@ def register(client: PlaygroundClient) -> int:
                     side=args["side"],
                     quantity=int(args["quantity"]),
                     limit_price=limit_price,
+                    account=_account(args),
                 ),
                 indent=2,
                 default=str,
@@ -202,14 +256,19 @@ def register(client: PlaygroundClient) -> int:
         description="Cancel a PENDING limit order by id. No-ops on terminal orders.",
         parameters={
             "type": "object",
-            "properties": {"order_id": {"type": "string"}},
+            "properties": {
+                "order_id": {"type": "string"},
+                "account": _ACCOUNT_PARAM,
+            },
             "required": ["order_id"],
         },
     )
     def _cancel(_ctx: ToolContext, args: Dict[str, Any]) -> str:
         try:
             return json.dumps(
-                client.cancel_order(args["order_id"]), indent=2, default=str
+                client.cancel_order(args["order_id"], account=_account(args)),
+                indent=2,
+                default=str,
             )
         except Exception as e:
             return _err(e)
@@ -222,14 +281,18 @@ def register(client: PlaygroundClient) -> int:
         parameters={
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100}
+                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+                "account": _ACCOUNT_PARAM,
             },
         },
     )
     def _leaderboard(_ctx: ToolContext, args: Dict[str, Any]) -> str:
         try:
             return json.dumps(
-                client.leaderboard(limit=int(args.get("limit", 20))),
+                client.leaderboard(
+                    limit=int(args.get("limit", 20)),
+                    account=_account(args),
+                ),
                 indent=2,
                 default=str,
             )
