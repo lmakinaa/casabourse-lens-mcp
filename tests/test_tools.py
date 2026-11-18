@@ -340,6 +340,7 @@ def test_news_sentiment(tools, parse_json):
     assert out["warnings"] == []
 
 
+@pytest.mark.skip(reason="AMMC tools are disabled; see trading_tools/tools/earnings_calendar.py")
 def test_earnings_calendar(tools, parse_json):
     out = parse_json(tools.execute_tool("get_earnings_calendar", {"symbol": "ATL", "lookahead_days": 365}))
     assert out["symbol"] == "ATL"
@@ -351,6 +352,7 @@ def test_earnings_calendar(tools, parse_json):
     assert len(out["events"]) == 2
 
 
+@pytest.mark.skip(reason="AMMC tools are disabled; see trading_tools/tools/earnings_calendar.py")
 def test_regulatory_filings(tools, parse_json):
     out = parse_json(
         tools.execute_tool(
